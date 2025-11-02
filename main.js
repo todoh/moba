@@ -8,7 +8,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gsta
 import { getDatabase, ref, set, onValue, onDisconnect, query, orderByChild, equalTo, off } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
 // 2. Importaciones de la lógica del juego
-import { project, updateCameraPosition, updateZoom, ZOOM_STEP, currentZoom, inverseProject } from './camera.js'; // <-- Importar inverseProject
+import { project, updateCameraPosition, updateZoom, ZOOM_STEP, currentZoom, inverseProject } from './camera.js';
 import { setupClickMove2_5D, setMoveActionDependencies, setCollisionChecker, setPortalHandler, setNpcHandler } from './move-action.js';
 import { loadGameDefinitions, drawGroundTile } from './elements.js';
 
@@ -49,16 +49,15 @@ let npcModalContainer, npcModalText, npcModalClose;
 const MELEE_RANGE = 2.0; // Distancia (en casillas) para interactuar
 
 // Estado de NPCs y constantes de movimiento
-let npcStates = {}; // Almacena el estado dinámico de los NPCs en el mapa
-const NPC_MOVE_SPEED = 0.02; // Más lento que el jugador
-const NPC_RANDOM_MOVE_CHANCE = 0.005; // Probabilidad por frame de moverse
-const NPC_RANDOM_WAIT_TIME = 2000; // ms de espera entre movimientos aleatorios
+let npcStates = {}; 
+const NPC_MOVE_SPEED = 0.02; 
+const NPC_RANDOM_MOVE_CHANCE = 0.005; 
+const NPC_RANDOM_WAIT_TIME = 2000; 
 
-// --- ¡NUEVO! Variables de Hover ---
+// Variables de Hover
 let mouseScreenPos = { x: 0, y: 0 };
-let hoveredItemKey = null; // 'npc_z_x' o 'portal_z_x'
-const INTERACTION_RADIUS = 0.75; // Radio en casillas del mundo para detectar hover
-// --- Fin de añadidos ---
+let hoveredItemKey = null; // 'npc_z_x', 'portal_z_x', o 'block_z_x'
+const INTERACTION_RADIUS = 0.75; 
 
 const playerSize = 1.0; 
 const playerImg = new Image();
@@ -74,7 +73,6 @@ window.onload = () => {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
-    // Obtener referencias del Modal
     npcModalContainer = document.getElementById('npc-modal-container');
     npcModalText = document.getElementById('npc-modal-text');
     npcModalClose = document.getElementById('npc-modal-close');
@@ -101,7 +99,7 @@ window.onload = () => {
     zoomOutButton.addEventListener('click', handleZoomOut);
 };
 
-// 6. Funciones de Canvas (¡MODIFICADO!)
+// 6. Funciones de Canvas
 function resizeCanvas() {
     if (canvas) {
         canvas.width = window.innerWidth;
@@ -111,14 +109,12 @@ function resizeCanvas() {
 function initCanvas() {
     canvas = document.getElementById('game-canvas');
     ctx = canvas.getContext('2d');
-    setupClickMove2_5D(canvas); // Configura el 'click'
+    setupClickMove2_5D(canvas); 
 
-    // --- ¡NUEVO! Listener para 'mousemove' ---
     canvas.addEventListener('mousemove', (event) => {
         mouseScreenPos.x = event.clientX;
         mouseScreenPos.y = event.clientY;
     });
-    // --- Fin de añadido ---
 
     canvas.addEventListener('wheel', (event) => {
         event.preventDefault(); 
@@ -146,7 +142,6 @@ async function initializeFirebase() {
                 
                 infoBar.textContent = "Cargando definiciones del juego...";
                 
-                // --- ¡PASO 1: Cargar definiciones! ---
                 try {
                     GAME_DEFINITIONS = await loadGameDefinitions(db);
                 } catch (defError) {
@@ -155,7 +150,6 @@ async function initializeFirebase() {
                     return;
                 }
 
-                // --- ¡PASO 2: Configurar el juego (MODIFICADO) ---
                 setMoveActionDependencies(myPlayerId, db, () => currentMapId);
                 setCollisionChecker(isPositionPassable);
                 setPortalHandler(getPortalDestination);
@@ -177,7 +171,6 @@ async function initializeFirebase() {
                     }
                 });
                 
-                // --- ¡PASO 3: Cargar el mapa inicial ---
                 loadMap(currentMapId); 
 
             } else {
@@ -213,7 +206,7 @@ function loadMap(mapId) {
     
     // 2. Limpiar estado local
     playersState = {};
-    npcStates = {}; // Limpiar NPCs
+    npcStates = {}; 
     currentMapId = mapId;
     
     // 3. Configurar nuevas referencias
@@ -237,7 +230,7 @@ function loadMap(mapId) {
             currentMapData = data;
             
             // Poblar el estado de NPCs
-            npcStates = {}; // Limpiar por si acaso
+            npcStates = {}; 
             for (let z = 0; z < currentMapData.height; z++) {
                 for (let x = 0; x < currentMapData.width; x++) {
                     const tile = currentMapData.tileGrid[z][x];
@@ -245,17 +238,17 @@ function loadMap(mapId) {
                         const elementDef = GAME_DEFINITIONS.elementTypes[tile.e.id];
                         // Es un NPC si es un sprite y tiene config de movimiento
                         if (elementDef && elementDef.drawType === 'sprite' && tile.e.movement) {
-                            const npcKey = `npc_${z}_${x}`; // Clave única basada en su tile de origen
+                            const npcKey = `npc_${z}_${x}`; 
                             npcStates[npcKey] = {
-                                ...tile.e, // Copia 'id', 'movement', 'route', 'interaction', etc.
-                                x: x + 0.5, // Posición actual X
-                                z: z + 0.5, // Posición actual Z
-                                targetX: x + 0.5, // Posición objetivo X
-                                targetZ: z + 0.5, // Posición objetivo Z
+                                ...tile.e, 
+                                x: x + 0.5, 
+                                z: z + 0.5, 
+                                targetX: x + 0.5, 
+                                targetZ: z + 0.5, 
                                 isMoving: false,
                                 currentTargetIndex: 0,
                                 lastMoveTime: Date.now(),
-                                originKey: npcKey // Guardamos su propia clave
+                                originKey: npcKey 
                             };
                         }
                     }
@@ -272,7 +265,6 @@ function loadMap(mapId) {
             }
             currentMapData.initialSpawn = spawnPos;
             
-            // Lógica de spawn del jugador
             onValue(myPlayerRef, (playerSnap) => {
                 const playerData = playerSnap.val();
                 if (!playerData) {
@@ -298,7 +290,6 @@ function loadMap(mapId) {
         }
     });
     
-    // playersListener
     playersListener = onValue(playersQuery, (snapshot) => {
         playersState = snapshot.val() || {};
         for (const id in interpolatedPlayersState) {
@@ -332,7 +323,7 @@ function gameLoop() {
     updateCameraPosition(myPlayerId, interpolatedPlayersState, canvas, playerSize);
     updatePlayerPositions(); 
     updateNpcPositions();
-    updateHoveredState(); // <-- ¡AÑADIDO! Comprobar hover
+    updateHoveredState(); 
     
     ctx.fillStyle = '#333333';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -357,13 +348,17 @@ function gameLoop() {
                         continue; // Saltar NPCs, se añadirán desde npcStates
                     }
                     
-                    // --- ¡AÑADIDO! Comprobar si es un portal y está "hovered" ---
                     let isHovered = false;
-                    const itemKey = `portal_${z}_${x}`; // Clave única para portales
-                    if (elementDef.drawType === 'portal' && itemKey === hoveredItemKey) {
+                    let itemKey = null;
+                    if (elementDef.drawType === 'portal') {
+                        itemKey = `portal_${z}_${x}`;
+                    } else if (elementDef.drawType === 'block') { // ¡NUEVO!
+                        itemKey = `block_${z}_${x}`;
+                    }
+
+                    if (itemKey && itemKey === hoveredItemKey) {
                         isHovered = true;
                     }
-                    // --- Fin de añadido ---
 
                     renderables.push({
                         type: 'element',
@@ -371,7 +366,8 @@ function gameLoop() {
                         z: z + 0.5,
                         y: 0,
                         definition: elementDef,
-                        isHovered: isHovered // <-- ¡AÑADIDO!
+                        instance: tile.e, // <-- ¡AÑADIDO! Pasar datos de instancia (ej: altura)
+                        isHovered: isHovered
                     });
                 }
             }
@@ -393,14 +389,15 @@ function gameLoop() {
     for (const [key, npc] of Object.entries(npcStates)) {
         const npcDef = GAME_DEFINITIONS.elementTypes[npc.id];
         if (npcDef) {
-            const isHovered = (key === hoveredItemKey); // <-- ¡AÑADIDO!
+            const isHovered = (key === hoveredItemKey); 
             renderables.push({
-                type: 'element', // Se dibujan igual que un elemento
+                type: 'element', 
                 x: npc.x,
                 z: npc.z,
                 y: 0, 
                 definition: npcDef,
-                isHovered: isHovered // <-- ¡AÑADIDO!
+                instance: npc, // <-- ¡AÑADIDO! Pasar datos de instancia
+                isHovered: isHovered 
             });
         }
     }
@@ -410,13 +407,23 @@ function gameLoop() {
 
     // 4. Dibujar todo (¡MODIFICADO!)
     for (const item of renderables) {
-        const screenPos = project(item.x, item.y, item.z);
         if (item.type === 'player') {
+            const screenPos = project(item.x, item.y, item.z); // Player usa lógica de dibujo antigua
             drawPlayer(item, screenPos);
         } else if (item.type === 'element') {
             if (item.definition.draw) {
-                // ¡Pasamos el flag isHovered a la función de dibujo!
-                item.definition.draw(ctx, item.definition, currentZoom, screenPos, item.isHovered);
+                // ¡MODIFICADO! Pasar la función project, coordenadas del mundo, e instancia
+                item.definition.draw(
+                    ctx, 
+                    project, 
+                    item.definition, 
+                    currentZoom, 
+                    item.x, 
+                    item.y, 
+                    item.z, 
+                    item.isHovered, 
+                    item.instance
+                );
             }
         }
     }
@@ -465,19 +472,16 @@ function updateNpcPositions() {
             const distance = Math.sqrt(dx * dx + dz * dz);
 
             if (distance < NPC_MOVE_SPEED) {
-                // Ha llegado al destino
                 npc.x = npc.targetX;
                 npc.z = npc.targetZ;
                 npc.isMoving = false;
-                npc.lastMoveTime = now; // Reiniciar temporizador de espera
+                npc.lastMoveTime = now; 
 
-                // Si está en una ruta, avanzar al siguiente punto
                 if (npc.movement === 'route' && npc.route && npc.route.length > 0) {
                     npc.currentTargetIndex = (npc.currentTargetIndex + 1) % npc.route.length;
                 }
 
             } else {
-                // Moverse hacia el destino
                 const normX = dx / distance;
                 const normZ = dz / distance;
                 npc.x += normX * NPC_MOVE_SPEED;
@@ -487,7 +491,6 @@ function updateNpcPositions() {
         // Decidir si iniciar un nuevo movimiento
         else {
             if (npc.movement === 'route' && npc.route && npc.route.length > 0) {
-                // Iniciar movimiento hacia el siguiente punto de la ruta
                 const targetWaypoint = npc.route[npc.currentTargetIndex];
                 const targetX = targetWaypoint[0] + 0.5;
                 const targetZ = targetWaypoint[1] + 0.5;
@@ -499,18 +502,16 @@ function updateNpcPositions() {
                 }
                 
             } else if (npc.movement === 'random') {
-                // Iniciar movimiento aleatorio si ha esperado lo suficiente
                 if (now - npc.lastMoveTime > NPC_RANDOM_WAIT_TIME && Math.random() < NPC_RANDOM_MOVE_CHANCE) {
                     const randomDir = Math.floor(Math.random() * 4);
                     let targetX = npc.x;
                     let targetZ = npc.z;
 
-                    if (randomDir === 0) targetX += 1; // Este
-                    else if (randomDir === 1) targetX -= 1; // Oeste
-                    else if (randomDir === 2) targetZ += 1; // Sur
-                    else if (randomDir === 3) targetZ -= 1; // Norte
+                    if (randomDir === 0) targetX += 1; 
+                    else if (randomDir === 1) targetX -= 1; 
+                    else if (randomDir === 2) targetZ += 1; 
+                    else if (randomDir === 3) targetZ -= 1; 
 
-                    // Comprobar si la casilla es transitable
                     if (isPositionPassable(targetX, targetZ)) {
                         npc.targetX = targetX;
                         npc.targetZ = targetZ;
@@ -518,26 +519,21 @@ function updateNpcPositions() {
                     }
                 }
             }
-            // Si el movimiento es 'still', isMoving siempre es false y no hace nada.
         }
     }
 }
 
-// --- ¡NUEVA FUNCIÓN! ---
 /**
  * Comprueba qué objeto interactuable está bajo el cursor.
- * Se llama en cada frame del gameLoop.
  */
 function updateHoveredState() {
     if (!canvas) return;
 
-    // 1. Convertir pos del ratón a coordenadas del mundo
     const worldCoords = inverseProject(mouseScreenPos.x, mouseScreenPos.y);
     let foundKey = null;
 
-    // 2. Comprobar NPCs (que están en movimiento)
+    // 2. Comprobar NPCs
     for (const [key, npc] of Object.entries(npcStates)) {
-        // Comprobar solo NPCs con diálogo
         if (npc.interaction === 'dialog') {
             const dist = Math.hypot(npc.x - worldCoords.x, npc.z - worldCoords.z);
             if (dist < INTERACTION_RADIUS) {
@@ -547,19 +543,19 @@ function updateHoveredState() {
         }
     }
 
-    // 3. Comprobar Portales (que son estáticos)
+    // 3. Comprobar Portales y Bloques (estáticos)
     if (!foundKey && currentMapData && currentMapData.tileGrid) {
         for (let z = 0; z < currentMapData.height; z++) {
-            if (foundKey) break; // Salir del bucle exterior si ya encontramos uno
+            if (foundKey) break; 
             for (let x = 0; x < currentMapData.width; x++) {
                 const tile = currentMapData.tileGrid[z][x];
                 if (tile && typeof tile.e === 'object' && tile.e.id) {
                     const elementDef = GAME_DEFINITIONS.elementTypes[tile.e.id];
-                    // Comprobar solo portales
-                    if (elementDef && elementDef.drawType === 'portal') {
+                    
+                    if (elementDef && (elementDef.drawType === 'portal' || elementDef.drawType === 'block')) {
                         const dist = Math.hypot((x + 0.5) - worldCoords.x, (z + 0.5) - worldCoords.z);
                         if (dist < INTERACTION_RADIUS) {
-                            foundKey = `portal_${z}_${x}`;
+                            foundKey = `${elementDef.drawType}_${z}_${x}`; // ej: "block_10_5"
                             break;
                         }
                     }
@@ -568,7 +564,6 @@ function updateHoveredState() {
         }
     }
 
-    // 4. Actualizar estado global y cursor
     hoveredItemKey = foundKey;
     canvas.style.cursor = hoveredItemKey ? 'pointer' : 'crosshair';
 }
@@ -642,7 +637,7 @@ function drawPlayer(player, screenPos) {
     );
 }
 
-// 14. Funciones de Lógica de Juego (¡CORREGIDAS!)
+// 14. Funciones de Lógica de Juego
 function isPositionPassable(worldX, worldZ) {
     if (!currentMapData || !currentMapData.tileGrid) return false; 
     const tileX = Math.floor(worldX);
@@ -658,6 +653,11 @@ function isPositionPassable(worldX, worldZ) {
     const elementDef = GAME_DEFINITIONS.elementTypes[elementId];
     
     if (!groundDef || !elementDef) return false; 
+    
+    // ¡MODIFICADO! Los bloques (tipo 'block') NUNCA son transitables.
+    if (elementDef.drawType === 'block') {
+        return false;
+    }
     
     return groundDef.passable && elementDef.passable;
 }
@@ -698,9 +698,7 @@ function getPortalDestination(worldX, worldZ) {
 }
 
 
-// ===================================
-// ### ¡NUEVAS FUNCIONES AÑADIDAS (NPC Interaction)! ###
-// ===================================
+// --- Funciones de Interacción con NPC (Sin cambios) ---
 
 function showNpcModal(text) {
     if (npcModalContainer) {
@@ -715,21 +713,13 @@ function hideNpcModal() {
     }
 }
 
-/**
- * Comprueba si hay un NPC interactuable en la casilla (worldX, worldZ)
- * y si el jugador está dentro del rango.
- */
-function getNpcInteraction(worldX, worldZ) { // worldX/Z es la posición del CLIC
-    // 1. Asegurarse de que el jugador y el mapa existan
+function getNpcInteraction(worldX, worldZ) { 
     const myPlayer = interpolatedPlayersState[myPlayerId];
     if (!myPlayer) {
         return false;
     }
 
-    // 2. Encontrar el NPC más cercano al clic
     let clickedNpc = null;
-    // --- ¡¡¡CORRECCIÓN AQUÍ!!! ---
-    // Usamos INTERACTION_RADIUS (el radio visual/sombra) para ver si "acertamos" el clic
     let minDistanceSq = INTERACTION_RADIUS * INTERACTION_RADIUS; 
 
     for (const npc of Object.values(npcStates)) {
@@ -744,16 +734,13 @@ function getNpcInteraction(worldX, worldZ) { // worldX/Z es la posición del CLI
     }
 
     if (!clickedNpc) {
-        return false; // No se hizo clic cerca de ningún NPC (dentro del radio de la sombra)
+        return false; 
     }
 
-    // 3. Comprobar si es un NPC con diálogo
     if (clickedNpc.interaction !== 'dialog') {
-        return false; // No tiene diálogo
+        return false; 
     }
     
-    // 4. ¡Es un NPC con diálogo! Comprobar la distancia del JUGADOR al NPC.
-    // (Aquí seguimos usando MELEE_RANGE, que es el rango de "hablar")
     const playerX = myPlayer.x;
     const playerZ = myPlayer.z;
     const npcX = clickedNpc.x;
@@ -762,14 +749,11 @@ function getNpcInteraction(worldX, worldZ) { // worldX/Z es la posición del CLI
     const distance = Math.sqrt(Math.pow(playerX - npcX, 2) + Math.pow(playerZ - npcZ, 2));
 
     if (distance <= MELEE_RANGE) {
-        // 5. ¡En rango! Mostrar el modal y detener el movimiento
         console.log(`Interactuando con NPC ${clickedNpc.id}. Distancia: ${distance}`);
         showNpcModal(clickedNpc.dialogText);
-        return true; // ¡Interacción exitosa!
+        return true; 
     } else {
-        // 6. Fuera de rango.
         console.log(`NPC ${clickedNpc.id} demasiado lejos. Distancia: ${distance}`);
         return false;
     }
 }
-

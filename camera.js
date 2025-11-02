@@ -11,7 +11,7 @@ export const BASE_ISO_TILE_H_HALF = 64; // Alto base
 
 // --- VARIABLES DE ZOOM ---
 export let currentZoom = 1.0;     // Nivel de zoom actual
-const MIN_ZOOM = 0.5;      // Zoom mínimo
+const MIN_ZOOM = 0.3;      // Zoom mínimo
 const MAX_ZOOM = 2.5;      // Zoom máximo
 export const ZOOM_STEP = 1.1;     // Factor de multiplicación
 
