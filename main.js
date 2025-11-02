@@ -9,16 +9,17 @@ import { getDatabase, ref, set, onValue, onDisconnect, query, orderByChild, equa
 
 // 2. Importaciones de la lógica del juego
 // ¡MODIFICADO! Cambiadas las funciones de rotación
-import { 
-    project, 
-    updateCameraPosition, 
-    updateZoom, ZOOM_STEP, currentZoom, 
+import {
+    project,
+    cameraOffset, // <--- ¡AÑADE ESTO!
+    updateCameraPosition,
+    updateZoom, ZOOM_STEP, currentZoom,
     inverseProject,
     startRotatingLeft,  // ¡NUEVO!
     startRotatingRight, // ¡NUEVO!
     stopRotating,       // ¡NUEVO!
     updateCameraAngle,
-    currentCameraAngle 
+    currentCameraAngle ,calculateVisibleWorldBounds, isCameraRotating 
 } from './camera.js';
 import { setupClickMove2_5D, setMoveActionDependencies, setCollisionChecker, setPortalHandler, setNpcHandler } from './move-action.js';
 import { loadGameDefinitions, drawGroundTile } from './elements.js';
@@ -28,7 +29,7 @@ import { loadGameDefinitions, drawGroundTile } from './elements.js';
 const firebaseConfig = {
   apiKey: "AIzaSyAfK_AOq-Pc2bzgXEzIEZ1ESWvnhMJUvwI",
   authDomain: "enraya-51670.firebaseapp.com",
-  databaseURL: "https://enraya-51670-default-rtdb.europe-west1.firebasedatabase.app", 
+  databaseURL: "https://enraya-51670-default-rtdb.europe-west1.firebasedatabase.app",
   projectId: "enraya-51670",
   storageBucket: "enraya-51670.firebasestorage.app",
   messagingSenderId: "103343380727",
@@ -36,6 +37,16 @@ const firebaseConfig = {
   measurementId: "G-2G31LLJY1T"
 };
 
+// --- ¡NUEVO! Variables del Caché Estático ---
+let staticWorldCache; // El canvas caché
+let cacheCtx; // El contexto 2D del caché
+let isCacheInvalid = true; // Flag para saber si redibujar
+let lastCacheAngle = -999;
+let lastCacheZoom = -999;
+let lastDrawnWorldBounds = null; // Para saber si nos movimos a un área nueva
+let lastCacheOffset = { x: 0, y: 0 };
+// ¡NUEVO! Esta será nuestra función 'project' para el caché (sin offset)
+ 
 // 4. Variables globales del juego y Firebase
 let app;
 let auth;
@@ -45,37 +56,38 @@ let myPlayerRef = null;
 let isGameLoopRunning = false;
 let GAME_DEFINITIONS = { groundTypes: {}, elementTypes: {} };
 let playersListener = null;
-let playersState = {}; 
-let interpolatedPlayersState = {}; 
+let playersState = {};
+let interpolatedPlayersState = {};
 const MOVEMENT_SPEED = 0.05; // Velocidad del jugador
 let mapListener = null;
 let mapRef = null;
-let currentMapData = null; 
+let currentMapData = null;
 let currentMapId = "map_001";
 let canvas, ctx;
 let infoBar;
-
+let lastCameraOffsetX = 0;
+let lastCameraOffsetY = 0;
 // Variables del Modal de NPC (sin cambios)
 let npcModalContainer, npcModalText, npcModalClose;
-const MELEE_RANGE = 2.0; 
+const MELEE_RANGE = 2.0;
 
 // Estado de NPCs (sin cambios)
-let npcStates = {}; 
-const NPC_MOVE_SPEED = 0.02; 
-const NPC_RANDOM_MOVE_CHANCE = 0.005; 
-const NPC_RANDOM_WAIT_TIME = 2000; 
+let npcStates = {};
+const NPC_MOVE_SPEED = 0.02;
+const NPC_RANDOM_MOVE_CHANCE = 0.005;
+const NPC_RANDOM_WAIT_TIME = 2000;
 
 // Variables de Hover (sin cambios)
 let mouseScreenPos = { x: 0, y: 0 };
-let hoveredItemKey = null; 
-const INTERACTION_RADIUS = 0.75; 
+let hoveredItemKey = null;
+const INTERACTION_RADIUS = 0.75;
 
-const playerSize = 1.0; 
+const playerSize = 1.0;
 const playerImg = new Image();
 let playerImgLoaded = true;
-const playerImgWidth = 250; 
-const playerImgHeight = 250; 
-const playerTextureURL = 'samurai.png'; 
+const playerImgWidth = 250;
+const playerImgHeight = 250;
+const playerTextureURL = 'samurai.png';
 
 // ¡NUEVO! Variables de Interpolación
 const PLAYER_LERP_AMOUNT = 0.1; // Más alto = más rápido
@@ -97,6 +109,9 @@ function lerp(start, end, amt) {
 window.onload = () => {
     infoBar = document.getElementById('info-bar');
     initCanvas();
+    // --- ¡NUEVO! Inicializar el caché ---
+    staticWorldCache = document.createElement('canvas');
+    cacheCtx = staticWorldCache.getContext('2d');
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
@@ -108,7 +123,7 @@ window.onload = () => {
     playerImg.onload = () => { playerImgLoaded = true; };
     playerImg.onerror = () => {
         console.error("No se pudo cargar la textura del jugador. Se usará un bloque de color.");
-        playerImgLoaded = false; 
+        playerImgLoaded = false;
     }
     playerImg.crossOrigin = "anonymous";
     playerImg.src = playerTextureURL;
@@ -118,8 +133,16 @@ window.onload = () => {
     // Listeners de Zoom (sin cambios)
     const zoomInButton = document.getElementById('zoom-in');
     const zoomOutButton = document.getElementById('zoom-out');
-    const handleZoomIn = (e) => { e.preventDefault(); updateZoom(ZOOM_STEP); };
-    const handleZoomOut = (e) => { e.preventDefault(); updateZoom(1 / ZOOM_STEP); };
+    const handleZoomIn = (e) => {
+        e.preventDefault();
+        updateZoom(ZOOM_STEP);
+        isCacheInvalid = true; // ¡Invalidar!
+    };
+    const handleZoomOut = (e) => {
+        e.preventDefault();
+        updateZoom(1 / ZOOM_STEP);
+        isCacheInvalid = true; // ¡Invalidar!
+    };
     zoomInButton.addEventListener('touchstart', handleZoomIn, { passive: false });
     zoomInButton.addEventListener('click', handleZoomIn);
     zoomOutButton.addEventListener('touchstart', handleZoomOut, { passive: false });
@@ -128,7 +151,7 @@ window.onload = () => {
     // --- ¡MODIFICADO! Listeners de Rotación Continua (Botones) ---
     const rotateLeftButton = document.getElementById('rotate-left');
     const rotateRightButton = document.getElementById('rotate-right');
-    
+
     // Izquierda
     rotateLeftButton.addEventListener('mousedown', (e) => { e.preventDefault(); startRotatingLeft(); });
     rotateLeftButton.addEventListener('touchstart', (e) => { e.preventDefault(); startRotatingLeft(); }, { passive: false });
@@ -144,7 +167,7 @@ window.onload = () => {
     rotateRightButton.addEventListener('touchend', (e) => { e.preventDefault(); stopRotating(); });
 
     // --- ¡NUEVOS! Listeners de Rotación Continua (Teclado) ---
-    
+
     // Usamos esta variable para evitar que al soltar una tecla se pare la rotación
     // si la otra sigue pulsada.
     let keyRotation = 0; // -1 para Q, 1 para E
@@ -161,7 +184,7 @@ window.onload = () => {
             startRotatingRight();
         }
     });
-    
+
     window.addEventListener('keyup', (e) => {
         // Solo parar si soltamos la tecla que corresponde a la dirección actual
         if ((e.key === 'q' || e.key === 'Q') && keyRotation === -1) {
@@ -179,12 +202,19 @@ function resizeCanvas() {
     if (canvas) {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+
+        // ¡NUEVO! Redimensionar el caché y marcarlo como inválido
+        if (staticWorldCache) {
+            staticWorldCache.width = canvas.width;
+            staticWorldCache.height = canvas.height;
+            isCacheInvalid = true;
+        }
     }
 }
 function initCanvas() {
     canvas = document.getElementById('game-canvas');
     ctx = canvas.getContext('2d');
-    setupClickMove2_5D(canvas); 
+    setupClickMove2_5D(canvas);
 
     canvas.addEventListener('mousemove', (event) => {
         mouseScreenPos.x = event.clientX;
@@ -192,11 +222,13 @@ function initCanvas() {
     });
 
     canvas.addEventListener('wheel', (event) => {
-        event.preventDefault(); 
+        event.preventDefault();
         if (event.deltaY < 0) {
             updateZoom(ZOOM_STEP);
+            isCacheInvalid = true; // ¡Invalidar!
         } else if (event.deltaY > 0) {
             updateZoom(1 / ZOOM_STEP);
+            isCacheInvalid = true; // ¡Invalidar!
         }
     }, { passive: false });
 }
@@ -207,16 +239,16 @@ async function initializeFirebase() {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getDatabase(app);
-        
+
         infoBar.textContent = "Autenticando...";
 
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 myPlayerId = user.uid;
                 myPlayerRef = ref(db, `moba-demo-players-3d/${myPlayerId}`);
-                
+
                 infoBar.textContent = "Cargando definiciones del juego...";
-                
+
                 try {
                     GAME_DEFINITIONS = await loadGameDefinitions(db);
                 } catch (defError) {
@@ -231,9 +263,9 @@ async function initializeFirebase() {
                 setNpcHandler(getNpcInteraction);
 
                 infoBar.innerHTML = `Conectado. <br> <strong>Tu UserID:</strong> ${myPlayerId.substring(0, 6)}<br><strong>Instrucciones:</strong> Toca para moverte.`;
-                
+
                 onDisconnect(myPlayerRef).remove();
-                
+
                 onValue(myPlayerRef, (snapshot) => {
                     const playerData = snapshot.val();
                     if (playerData && playerData.currentMap !== currentMapId) {
@@ -247,8 +279,8 @@ async function initializeFirebase() {
                         loadMap(playerData.currentMap);
                     }
                 });
-                
-                loadMap(currentMapId); 
+
+                loadMap(currentMapId);
 
             } else {
                 signInAnonymously(auth).catch((error) => {
@@ -271,7 +303,7 @@ async function initializeFirebase() {
  */
 function loadMap(mapId) {
     console.log(`Cargando mapa: ${mapId}`);
-    
+
     // 1. Limpiar listeners antiguos
     if (mapListener) {
         off(mapRef, 'value', mapListener);
@@ -280,12 +312,13 @@ function loadMap(mapId) {
         const oldPlayersQuery = query(ref(db, 'moba-demo-players-3d'), orderByChild('currentMap'), equalTo(currentMapId));
         off(oldPlayersQuery, 'value', playersListener);
     }
-    
+
     // 2. Limpiar estado local
     playersState = {};
-    npcStates = {}; 
+    npcStates = {};
     currentMapId = mapId;
-    
+    isCacheInvalid = true; // ¡Forzar redibujo del caché al cargar mapa!
+
     // 3. Configurar nuevas referencias
     mapRef = ref(db, `moba-demo-maps/${mapId}`);
     const playersQuery = query(ref(db, 'moba-demo-players-3d'), orderByChild('currentMap'), equalTo(mapId));
@@ -294,6 +327,14 @@ function loadMap(mapId) {
     mapListener = onValue(mapRef, (snapshot) => {
         const data = snapshot.val();
         if (data && data.tiles) {
+            
+            // --- ¡¡¡CORRECCIÓN!!! ---
+            // Añadir valores de fallback para width y height por si
+            // faltan en la base de datos.
+            data.width = data.width || 20; // Fallback a 20
+            data.height = data.height || 20; // Fallback a 20
+            // --- FIN CORRECCIÓN ---
+
             // Procesamiento de tileGrid (sin cambios)
             data.tileGrid = [];
             for (let z = 0; z < data.height; z++) {
@@ -308,28 +349,29 @@ function loadMap(mapId) {
                 data.tileGrid.push(row);
             }
             currentMapData = data;
-            
+            isCacheInvalid = true; // Datos del mapa cambiaron, invalidar caché
+
             // Poblar el estado de NPCs (sin cambios)
-            npcStates = {}; 
+            npcStates = {};
             for (let z = 0; z < currentMapData.height; z++) {
                 for (let x = 0; x < currentMapData.width; x++) {
                     const tile = currentMapData.tileGrid[z][x];
                     if (tile && typeof tile.e === 'object' && tile.e.id) {
                         const elementDef = GAME_DEFINITIONS.elementTypes[tile.e.id];
                         if (elementDef && elementDef.drawType === 'sprite' && tile.e.movement) {
-                            const npcKey = `npc_${z}_${x}`; 
+                            const npcKey = `npc_${z}_${x}`;
                             npcStates[npcKey] = {
-                                ...tile.e, 
-                                x: x + 0.5, 
-                                z: z + 0.5, 
+                                ...tile.e,
+                                x: x + 0.5,
+                                z: z + 0.5,
                                 // ¡NUEVO! Añadir Y inicial
-                                y: playerSize + getGroundHeightAt(x + 0.5, z + 0.5), 
-                                targetX: x + 0.5, 
-                                targetZ: z + 0.5, 
+                                y: playerSize + getGroundHeightAt(x + 0.5, z + 0.5),
+                                targetX: x + 0.5,
+                                targetZ: z + 0.5,
                                 isMoving: false,
                                 currentTargetIndex: 0,
                                 lastMoveTime: Date.now(),
-                                originKey: npcKey 
+                                originKey: npcKey
                             };
                         }
                     }
@@ -339,16 +381,20 @@ function loadMap(mapId) {
 
             // Lógica de Spawn
             let spawnPos;
-            if (data.startPosition && data.startPosition.x !== null && data.startPosition.z !== null) {
+            // --- ¡¡¡CORRECCIÓN CRÍTICA!!! ---
+            // Comprobar explícitamente si 'x' y 'z' son NÚMEROS.
+            // La comprobación anterior (!== null) fallaba si las propiedades eran 'undefined'.
+            if (data.startPosition && typeof data.startPosition.x === 'number' && typeof data.startPosition.z === 'number') {
                 spawnPos = { x: data.startPosition.x + 0.5, z: data.startPosition.z + 0.5 };
             } else {
-                spawnPos = { x: data.width / 2, z: data.height / 2 };
+                // Esto ahora es seguro gracias al fallback Y se centra en la casilla
+                spawnPos = { x: (data.width / 2) + 0.5, z: (data.height / 2) + 0.5 };
             }
             currentMapData.initialSpawn = spawnPos;
-            
+
             // ¡NUEVO! Establecer la Y inicial del jugador al cargar el mapa
             interpolatedPlayerVisualY = playerSize + getGroundHeightAt(spawnPos.x, spawnPos.z);
-            
+
             onValue(myPlayerRef, (playerSnap) => {
                 const playerData = playerSnap.val();
                 if (!playerData) {
@@ -375,10 +421,10 @@ function loadMap(mapId) {
 
         } else {
             console.warn(`No se encontraron datos para el mapa ${mapId}.`);
-            currentMapData = null; 
+            currentMapData = null;
         }
     });
-    
+
     // ¡MODIFICADO! Añadir 'y' inicial al estado interpolado
     playersListener = onValue(playersQuery, (snapshot) => {
         playersState = snapshot.val() || {};
@@ -390,10 +436,10 @@ function loadMap(mapId) {
         for (const id in playersState) {
             if (!interpolatedPlayersState[id]) {
                 // Es un nuevo jugador
-                interpolatedPlayersState[id] = { 
+                interpolatedPlayersState[id] = {
                     ...playersState[id],
                     // ¡NUEVO! Añadir Y inicial
-                    y: playerSize + getGroundHeightAt(playersState[id].x, playersState[id].z) 
+                    y: playerSize + getGroundHeightAt(playersState[id].x, playersState[id].z)
                 };
             }
         }
@@ -402,7 +448,7 @@ function loadMap(mapId) {
     // 5. Iniciar bucle del juego
     if (!isGameLoopRunning) {
         isGameLoopRunning = true;
-        gameLoop(); 
+        gameLoop();
     }
 }
 
@@ -412,7 +458,7 @@ function loadMap(mapId) {
  */
 function getTileHeight(tileX, tileZ) {
     if (!currentMapData || !currentMapData.tileGrid) return 0;
-    
+
     // Tratar los bordes del mapa
     const clampedX = Math.max(0, Math.min(tileX, currentMapData.width - 1));
     const clampedZ = Math.max(0, Math.min(tileZ, currentMapData.height - 1));
@@ -453,7 +499,7 @@ function getGroundHeightAt(worldX, worldZ) {
     // 5a. Interpolar a lo largo del eje X para las dos filas Z
     const lerp_z0 = lerp(h00, h10, tx); // Interpolación superior
     const lerp_z1 = lerp(h01, h11, tx); // Interpolación inferior
-    
+
     // 5b. Interpolar a lo largo del eje Z entre los dos valores X
     const finalHeight = lerp(lerp_z0, lerp_z1, tz);
 
@@ -462,145 +508,294 @@ function getGroundHeightAt(worldX, worldZ) {
 
 
 
+ /**
+ * ¡¡¡MODIFICADO!!!
+ * Dibuja SOLO el suelo PLANO (h <= 1.0) al canvas caché.
+ */
+function redrawStaticCache(worldBounds) {
+    console.log("--- REDIBUJANDO CACHÉ ESTÁTICO (SOLO SUELO PLANO) ---");
+
+    // 1. Limpiar el caché
+    cacheCtx.fillStyle = '#333333';
+    cacheCtx.fillRect(0, 0, staticWorldCache.width, staticWorldCache.height);
+
+    // 2. Dibujar el suelo (usando projectForCache, que NO tiene offset)
+    if (currentMapData && currentMapData.tileGrid) {
+        // ¡MODIFICADO! Añadido '1.0' al final
+        // ¡Dibuja SÓLO el suelo con altura <= 1.0!
+        drawGround(cacheCtx, GAME_DEFINITIONS.groundTypes, currentCameraAngle, worldBounds, project, 1.0);
+    }
+
+    // ¡¡¡ELIMINADO!!!
+    // Ya no dibujamos bloques ni portales en el caché.
+    // Se dibujarán en el gameLoop.
+
+    // 4. Marcar el caché como válido
+    isCacheInvalid = false;
+    lastCacheAngle = currentCameraAngle;
+    lastCacheZoom = currentZoom;
+    lastDrawnWorldBounds = worldBounds;
+}
+
+// ¡NUEVO! Función de ayuda para comprobar si los límites han cambiado
+function haveBoundsChanged(boundsA, boundsB) {
+    if (!boundsA || !boundsB) return true;
+    return boundsA.minX !== boundsB.minX || boundsA.maxX !== boundsB.maxX ||
+           boundsA.minZ !== boundsB.minZ || boundsA.maxZ !== boundsB.maxZ;
+}
+
+
 /**
- * ¡MODIFICADO!
+ * ¡¡¡MODIFICADO!!!
  * Bucle principal del juego.
- * Ahora usa la Y visual suavizada para el jugador y la cámara.
+ * Ahora ordena y dibuja TODOS los objetos 3D (jugadores, NPCs, bloques, suelo alto).
  */
 function gameLoop() {
-    if (!isGameLoopRunning) return; 
-    
-    requestAnimationFrame(gameLoop); 
-    if (!ctx) return; 
+    if (!isGameLoopRunning) return;
+    requestAnimationFrame(gameLoop);
+    if (!ctx || !currentMapData) return; // Esperar a que el mapa cargue
 
-    // 1. Actualizar ángulo de la cámara (sin cambios)
+    // 1. Actualizar ángulo de la cámara (¡ahora usa lerp!)
     updateCameraAngle();
 
-    // 2. Actualizar Y suavizada
+    // 2. ¡MOVIDO! Actualizar TODAS las posiciones primero
+    updatePlayerPositions(); // <-- CALCULA Y NUEVA
+    updateNpcPositions();
+
+    // 3. ¡NUEVO! Actualizar la Y visual de MI jugador para la cámara
     if (myPlayerId && interpolatedPlayersState[myPlayerId]) {
-        const myPlayer = interpolatedPlayersState[myPlayerId];
-        // ¡CORRECCIÓN 2! Esta línea faltaba. Calcula la Y objetivo.
-        const targetPlayerVisualY = playerSize + getGroundHeightAt(myPlayer.x, myPlayer.z);
-        // Ahora interpola hacia ese objetivo
-        interpolatedPlayerVisualY = lerp(interpolatedPlayerVisualY, targetPlayerVisualY, PLAYER_LERP_AMOUNT);
+        interpolatedPlayerVisualY = interpolatedPlayersState[myPlayerId].y;
+    }
+
+    // 4. ¡MOVIDO! Actualizar la cámara AHORA (usa la Y nueva)
+    updateCameraPosition(myPlayerId, interpolatedPlayersState, canvas, interpolatedPlayerVisualY);
+    if (cameraOffset.x !== lastCameraOffsetX || cameraOffset.y !== lastCameraOffsetY) {
+        // Si la cámara se mueve, el caché que dibujamos en (0,0) necesita actualizarse
+        // para incluir las nuevas áreas.
+        isCacheInvalid = true; 
+        lastCameraOffsetX = cameraOffset.x;
+        lastCameraOffsetY = cameraOffset.y;
     }
     
-    // 3. Actualizar cámara (sin cambios)
-    updateCameraPosition(myPlayerId, interpolatedPlayersState, canvas, interpolatedPlayerVisualY);
-    
-    // 4. Actualizar posiciones (sin cambios)
-    updatePlayerPositions(); 
-    updateNpcPositions();
-    updateHoveredState(); 
-    
+    // 5. ¡MOVIDO! Actualizar el hover AHORA (usa la Y nueva)
+    updateHoveredState();
+
+    // 6. Calcular límites visuales AHORA (usa la Y nueva)
+    const playerGroundY = interpolatedPlayerVisualY - playerSize;
+    const worldBounds = calculateVisibleWorldBounds(canvas, playerGroundY);
+
+    // --- ¡NUEVA LÓGICA DE CACHÉ! ---
+    // Invalida el caché si:
+    // 1. Está girando.
+    // 2. El zoom cambió (se marca en 'handleZoomIn/Out').
+    // 3. El ángulo *finalizó* de girar (y es diferente al caché).
+    // 4. Los límites del mundo visibles (frustum) han cambiado.
+    const isRotating = isCameraRotating();
+
+    if (isRotating || isCacheInvalid || haveBoundsChanged(worldBounds, lastDrawnWorldBounds)) {
+        // Redibujar SIEMPRE si es inválido, está girando, o nos movemos.
+        redrawStaticCache(worldBounds);
+    }
+    // --------------------------------
+
+    // 1. Limpiar pantalla principal
     ctx.fillStyle = '#333333';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // --- ¡MODIFICADO! ---
-    // 1. Dibujar el suelo (Ahora pasamos el ángulo)
-    drawGround(GAME_DEFINITIONS.groundTypes, currentCameraAngle);
+    // 2. ¡DIBUJAR EL CACHÉ!
+    // El caché (staticWorldCache) se dibujó con project(..., false) -> SIN offset
+    // Ahora lo movemos a su sitio en la pantalla.
+    ctx.drawImage(staticWorldCache, 0, 0);
 
-    // 2. Crear lista de "cosas" a dibujar
+    // 3. Crear lista de "cosas" a dibujar
     let renderables = [];
-    
-    // Añadir jugadores a la lista
+
+    // --- AÑADIR JUGADORES ---
     for (const id in interpolatedPlayersState) {
         const p = interpolatedPlayersState[id];
-        renderables.push({
-            id: p.id,
-            x: p.x,
-            y: p.y, // ¡Usar la Y interpolada!
-            z: p.z,
-            type: 'player',
-            isHovered: false
-        });
+        if (p.x >= worldBounds.minX && p.x <= worldBounds.maxX &&
+            p.z >= worldBounds.minZ && p.z <= worldBounds.maxZ)
+        {
+            renderables.push({
+                id: p.id,
+                type: 'player',
+                x: p.x,
+                y: p.y, // Esta es la Y visual interpolada
+                z: p.z
+                // ¡MODIFICADO! 'sortKey' eliminado. Se calculará dinámicamente.
+            });
+        }
     }
 
-    // Añadir NPCs a la lista
+    // --- AÑADIR NPCs ---
     for (const [key, npc] of Object.entries(npcStates)) {
-        renderables.push({
-            id: npc.id,
-            x: npc.x,
-            y: npc.y, // ¡Usar la Y interpolada!
-            z: npc.z,
-            type: 'element',
-            definition: GAME_DEFINITIONS.elementTypes[npc.id],
-            instance: npc,
-            isHovered: (hoveredItemKey === key)
-        });
+         if (npc.x >= worldBounds.minX && npc.x <= worldBounds.maxX &&
+            npc.z >= worldBounds.minZ && npc.z <= worldBounds.maxZ)
+        {
+            const elementDef = GAME_DEFINITIONS.elementTypes[npc.id];
+            if (elementDef) {
+                renderables.push({
+                    id: key,
+                    type: 'element', // Los NPCs se dibujan como 'element'
+                    definition: elementDef,
+                    x: npc.x,
+                    y: npc.y - playerSize, // Y es la altura del suelo, no la cabeza
+                    z: npc.z,
+                    isHovered: (hoveredItemKey === key),
+                    instance: npc // Pasar la instancia del NPC
+                    // ¡MODIFICADO! 'sortKey' eliminado. Se calculará dinámicamente.
+                });
+            }
+        }
     }
 
-    // Añadir elementos del mapa (Bloques, Portales)
+    // --- ¡¡¡NUEVO!!! AÑADIR SUELO ALTO, BLOQUES Y PORTALES ---
     if (currentMapData && currentMapData.tileGrid) {
-        for (let z = 0; z < currentMapData.height; z++) {
-            for (let x = 0; x < currentMapData.width; x++) {
-                const tile = currentMapData.tileGrid[z][x];
-                if (!tile || !tile.e || tile.e === 'none') continue;
-                
-                const elementId = (typeof tile.e === 'object') ? tile.e.id : tile.e;
-                const elementDef = GAME_DEFINITIONS.elementTypes[elementId];
+        const zStart = Math.max(0, worldBounds.minZ);
+        const zEnd = Math.min(currentMapData.height, worldBounds.maxZ);
+        const xStart = Math.max(0, worldBounds.minX);
+        const xEnd = Math.min(currentMapData.width, worldBounds.maxX);
 
+        for (let z = zStart; z < zEnd; z++) {
+            for (let x = xStart; x < xEnd; x++) {
+                if (z < 0 || z >= currentMapData.height || x < 0 || x >= currentMapData.width) continue;
+
+                const tile = currentMapData.tileGrid[z][x];
+                if (!tile) continue;
+
+                const height = (tile.h !== undefined) ? tile.h : 1.0;
+                const elementId = (typeof tile.e === 'object' && tile.e) ? tile.e.id : tile.e;
+                const elementDef = GAME_DEFINITIONS.elementTypes[elementId];
+                
+                // 1. Añadir SUELO ALTO (¡Tu acantilado!)
+                if (height > 1.0) { // <-- ¡CLAVE! Si el suelo es más alto que 1.0
+                    const groundDef = GAME_DEFINITIONS.groundTypes[tile.g] || GAME_DEFINITIONS.groundTypes['void'];
+                    if (groundDef) {
+                        renderables.push({
+                            id: `ground_${z}_${x}`,
+                            type: 'ground', // Nuevo tipo para el dibujado
+                            definition: groundDef,
+                            x: x, // drawGroundTile usa x, z
+                            y: height, // 'y' almacena la altura
+                            z: z, 
+                            isHovered: false, 
+                            instance: null
+                            // ¡MODIFICADO! 'sortKey' eliminado. Se calculará dinámicamente.
+                        });
+                    }
+                }
+
+                // 2. Añadir BLOQUES y PORTALES (Elementos 3D)
                 if (elementDef && (elementDef.drawType === 'block' || elementDef.drawType === 'portal')) {
-                     const key = `${elementDef.drawType}_${z}_${x}`;
-                     renderables.push({
-                        id: key,
-                        x: x + 0.5,
-                        y: getGroundHeightAt(x + 0.5, z + 0.5), // Base para bloques
-                        z: z + 0.5,
-                        type: 'element',
+                    // ¡OJO! La altura base de un bloque es la del suelo.
+                    const baseHeight = getGroundHeightAt(x + 0.5, z + 0.5);
+                    const itemKey = `${elementDef.drawType}_${z}_${x}`;
+                    
+                    renderables.push({
+                        id: itemKey,
+                        type: 'element', // Tipo 'element'
                         definition: elementDef,
-                        instance: (typeof tile.e === 'object') ? tile.e : null,
-                        isHovered: (hoveredItemKey === key)
+                        x: x + 0.5, // drawBlock usa el centro
+                        y: baseHeight, // 'y' es la altura del suelo de abajo
+                        z: z + 0.5,
+                        isHovered: (hoveredItemKey === itemKey),
+                        instance: null
+                        // ¡MODIFICADO! 'sortKey' eliminado. Se calculará dinámicamente.
                     });
                 }
             }
         }
     }
-     
-    // --- ¡MODIFICADO! ---
-    // 3. Ordenar (¡Lógica de ordenamiento dinámica!)
-    
-    // Pre-calcular el coseno y seno del ángulo actual
-    const cosA = Math.cos(currentCameraAngle);
-    const sinA = Math.sin(currentCameraAngle);
-    
-    // Calcular el vector de "profundidad"
-    // Este es el vector que apunta "hacia dentro" de la pantalla
-    const depthX = cosA + sinA;
-    const depthZ = cosA - sinA;
 
-    // Asignar una "clave de profundidad" (sortKey) a cada objeto
-    for (const item of renderables) {
-        // La profundidad es un producto punto de la posición (x,z) y el vector de profundidad
-        item.sortKey = item.x * depthX + item.z * depthZ;
+
+    // 4. Ordenar (¡¡¡LÓGICA COMPLETAMENTE NUEVA!!!)
+    if (currentMapData) {
+        const cosA = Math.cos(currentCameraAngle);
+        const sinA = Math.sin(currentCameraAngle);
+
+        renderables.sort((a, b) => {
+            // Coordenadas del centro para el ordenado
+            // (Los items de suelo están en x,z, los demás en x+0.5, z+0.5,
+            // pero para ordenar, el centro (x+0.5, z+0.5) es más robusto para todos)
+            let a_x = (a.type === 'ground') ? a.x + 0.5 : a.x;
+            let a_z = (a.type === 'ground') ? a.z + 0.5 : a.z;
+            let b_x = (b.type === 'ground') ? b.x + 0.5 : b.x;
+            let b_z = (b.type === 'ground') ? b.z + 0.5 : b.z;
+
+            // Calcular la "profundidad" de la pantalla para 'a' y 'b'
+            // Esta es la misma fórmula que determina la posición 'y' en la pantalla
+            // (antes de restar la altura del objeto)
+            const depthA = (a_x * cosA - a_z * sinA) + (a_x * sinA + a_z * cosA);
+            const depthB = (b_x * cosA - b_z * sinA) + (b_x * sinA + b_z * cosA);
+
+            // --- ¡¡¡AJUSTE FINO!!! ---
+            // Si las profundidades son casi iguales, usar la altura Y como desempate.
+            if (Math.abs(depthA - depthB) < 0.001) { 
+                
+                // 'ground' y 'element' (NPC) tienen 'y' como su *base* (e.g., 1.0)
+                // 'player' tiene 'y' como su *cabeza* (e.g., 2.0)
+                // Queremos que el desempate sea por la `y` de la *base*.
+                let a_y_base = (a.type === 'player') ? a.y - playerSize : a.y;
+                let b_y_base = (b.type === 'player') ? b.y - playerSize : b.y;
+                
+                if (Math.abs(a_y_base - b_y_base) > 0.001) {
+                    // Dibujar el que tenga base MÁS BAJA (e.g. suelo) primero.
+                    return a_y_base - b_y_base;
+                }
+                
+                // Si las bases son iguales (NPC y Suelo en el mismo tile)
+                // Dar prioridad al suelo para que se dibuje primero.
+                if (a.type === 'ground' && b.type !== 'ground') {
+                    return -1; // 'a' (suelo) viene primero
+                }
+                if (a.type !== 'ground' && b.type === 'ground') {
+                    return 1; // 'b' (suelo) viene primero
+                }
+                // Si son dos players o dos NPCs, el orden no importa
+                return 0;
+            }
+
+            // --- ¡¡¡CORRECCIÓN PRINCIPAL!!! ---
+            // Orden principal por profundidad ASCENDENTE.
+            // Objetos con menor profundidad (más "arriba" en la pantalla) se dibujan
+            // PRIMERO.
+            return depthA - depthB;
+        });
     }
 
-    // Ordenar usando la nueva clave
-    renderables.sort((a, b) => a.sortKey - b.sortKey);
-
-
-    // 4. Dibujar todo (¡MODIFICADO! Pasar el ángulo)
+    // 5. Dibujar TODO (¡MODIFICADO!)
     for (const item of renderables) {
         if (item.type === 'player') {
-            const screenPos = project(item.x, item.y, item.z); 
+            // ¡Importante! Usar el 'project' global (con offset)
+            const screenPos = project(item.x, item.y, item.z);
             drawPlayer(item, screenPos);
+
         } else if (item.type === 'element') {
+            // Dibuja NPCs, Bloques y Portales
             if (item.definition.draw) {
-                let baseHeight = item.y;
-                // Los sprites se dibujan *sobre* la altura del suelo (item.y)
-                // Los bloques se dibujan *desde* la altura del suelo (item.y)
-                // (La función drawBlock maneja esto internamente)
-                
+                // ¡Importante! Usar el 'project' global (con offset)
                 item.definition.draw(
-                    ctx, project, item.definition, currentZoom, 
-                    item.x, 
-                    baseHeight, 
-                    item.z, 
-                    item.isHovered, 
+                    ctx, project, item.definition, currentZoom,
+                    item.x,
+                    item.y, // 'baseHeight' (suelo)
+                    item.z,
+                    item.isHovered,
                     item.instance,
-                    currentCameraAngle // <-- ¡NUEVO! Pasar el ángulo
+                    currentCameraAngle
                 );
             }
+        } else if (item.type === 'ground') { // <-- ¡NUEVA SECCIÓN!
+            // Dibuja el tile de suelo alto
+            drawGroundTile(
+                ctx,
+                project, // El project global con offset
+                item.x,
+                item.z,
+                item.definition,
+                item.y, // 'y' almacena la altura
+                currentZoom,
+                currentCameraAngle
+            );
         }
     }
 }
@@ -610,19 +805,19 @@ function gameLoop() {
  */
 function updatePlayerPositions() {
     for (const id in playersState) {
-        const targetPlayerData = playersState[id]; 
-        const playerMesh = interpolatedPlayersState[id]; 
+        const targetPlayerData = playersState[id];
+        const playerMesh = interpolatedPlayersState[id];
         if (!playerMesh || targetPlayerData.currentMap !== currentMapId) {
-            continue; 
+            continue;
         }
-        
+
         // Interpolar X y Z
         const targetX = targetPlayerData.x;
         const targetZ = targetPlayerData.z;
         const dx = targetX - playerMesh.x;
         const dz = targetZ - playerMesh.z;
         const distance = Math.sqrt(dx * dx + dz * dz);
-        
+
         if (playerMesh.currentMap !== targetPlayerData.currentMap) {
              playerMesh.x = targetX;
              playerMesh.z = targetZ;
@@ -631,18 +826,44 @@ function updatePlayerPositions() {
              playerMesh.currentMap = targetPlayerData.currentMap;
              continue;
         }
-        
+
         if (distance < MOVEMENT_SPEED) {
             playerMesh.x = targetX;
             playerMesh.z = targetZ;
         } else {
             const normX = dx / distance;
             const normZ = dz / distance;
-            playerMesh.x += normX * MOVEMENT_SPEED;
-            playerMesh.z += normZ * MOVEMENT_SPEED;
+            
+            // --- ¡¡¡MODIFICACIÓN CLAVE!!! ---
+            // 1. Calcular el *próximo* paso potencial
+            const nextX = playerMesh.x + normX * MOVEMENT_SPEED;
+            const nextZ = playerMesh.z + normZ * MOVEMENT_SPEED;
+
+            // 2. Comprobar la colisión en ESE paso
+            // (isPositionPassable está definida más abajo en main.js)
+            if (isPositionPassable(nextX, nextZ)) {
+                // 3. Si es seguro, mover
+                playerMesh.x = nextX;
+                playerMesh.z = nextZ;
+            } else {
+                // 4. Si no es seguro (else), simplemente NO actualizamos
+                // la posición. El jugador se detendrá automáticamente
+                // al "chocar" con el obstáculo.
+                
+                // Opcional: Para evitar que se "atasque" si el target
+                // sigue siendo inalcanzable, podríamos forzar el target
+                // local a la posición actual para detener el intento,
+                // pero no es estrictamente necesario.
+                
+                // playerMesh.x = playerMesh.x; (no hacer nada)
+                // playerMesh.z = playerMesh.z; (no hacer nada)
+            }
+            // --- FIN DE LA MODIFICACIÓN ---
         }
-        
+
         // --- ¡NUEVO! Interpolar Y ---
+        // La Y se interpola en la posición final del fotograma (ya sea
+        // la nueva o la antigua si hubo colisión).
         const targetY = playerSize + getGroundHeightAt(playerMesh.x, playerMesh.z);
         playerMesh.y = lerp(playerMesh.y, targetY, PLAYER_LERP_AMOUNT);
     }
@@ -667,7 +888,7 @@ function updateNpcPositions() {
                 npc.x = npc.targetX;
                 npc.z = npc.targetZ;
                 npc.isMoving = false;
-                npc.lastMoveTime = now; 
+                npc.lastMoveTime = now;
                 if (npc.movement === 'route' && npc.route && npc.route.length > 0) {
                     npc.currentTargetIndex = (npc.currentTargetIndex + 1) % npc.route.length;
                 }
@@ -694,10 +915,10 @@ function updateNpcPositions() {
                     const randomDir = Math.floor(Math.random() * 4);
                     let targetX = npc.x;
                     let targetZ = npc.z;
-                    if (randomDir === 0) targetX += 1; 
-                    else if (randomDir === 1) targetX -= 1; 
-                    else if (randomDir === 2) targetZ += 1; 
-                    else if (randomDir === 3) targetZ -= 1; 
+                    if (randomDir === 0) targetX += 1;
+                    else if (randomDir === 1) targetX -= 1;
+                    else if (randomDir === 2) targetZ += 1;
+                    else if (randomDir === 3) targetZ -= 1;
                     if (isPositionPassable(targetX, targetZ)) {
                         npc.targetX = targetX;
                         npc.targetZ = targetZ;
@@ -706,7 +927,7 @@ function updateNpcPositions() {
                 }
             }
         }
-        
+
         // --- ¡NUEVO! Interpolar Y del NPC ---
         const targetNpcY = playerSize + getGroundHeightAt(npc.x, npc.z);
         npc.y = lerp(npc.y, targetNpcY, PLAYER_LERP_AMOUNT);
@@ -719,9 +940,13 @@ function updateNpcPositions() {
  */
 function updateHoveredState() {
     if (!canvas) return;
-    
-    // ¡MODIFICADO! Usar la Y suavizada del jugador para la proyección
-    const worldCoords = inverseProject(mouseScreenPos.x, mouseScreenPos.y, interpolatedPlayerVisualY);
+
+    // --- ¡¡¡ARREGLO DEFINITIVO!!! ---
+    // ¡DEBEMOS USAR LA ALTURA DEL SUELO, NO LA ALTURA DE LA CABEZA!
+    const playerGroundY = interpolatedPlayerVisualY - playerSize;
+    const worldCoords = inverseProject(mouseScreenPos.x, mouseScreenPos.y, playerGroundY);
+    // --- FIN DEL ARREGLO ---
+
     let foundKey = null;
 
     // 2. Comprobar NPCs (lógica sin cambios)
@@ -737,9 +962,16 @@ function updateHoveredState() {
 
     // 3. Comprobar Portales y Bloques (lógica sin cambios)
     if (!foundKey && currentMapData && currentMapData.tileGrid) {
-        for (let z = 0; z < currentMapData.height; z++) {
-            if (foundKey) break; 
-            for (let x = 0; x < currentMapData.width; x++) {
+        // Optimización: solo comprobar las casillas cercanas al cursor
+        const checkRadius = 2;
+        const xStart = Math.max(0, Math.floor(worldCoords.x) - checkRadius);
+        const xEnd = Math.min(currentMapData.width, Math.ceil(worldCoords.x) + checkRadius);
+        const zStart = Math.max(0, Math.floor(worldCoords.z) - checkRadius);
+        const zEnd = Math.min(currentMapData.height, Math.ceil(worldCoords.z) + checkRadius);
+
+        for (let z = zStart; z < zEnd; z++) {
+            if (foundKey) break;
+            for (let x = xStart; x < xEnd; x++) {
                 const tile = currentMapData.tileGrid[z][x];
                 if (tile && typeof tile.e === 'object' && tile.e.id) {
                     const elementDef = GAME_DEFINITIONS.elementTypes[tile.e.id];
@@ -761,45 +993,72 @@ function updateHoveredState() {
 
 
 /**
- * Dibuja el suelo 3D. (sin cambios)
+ * ¡¡¡MODIFICADO!!!
+ * Dibuja el suelo 3D.
+ * Acepta 'maxHeightToDraw' para que el caché pueda dibujar solo el suelo plano.
  */
-function drawGround(groundTypes, cameraAngle = 0) { // <-- ¡NUEVO! Aceptar ángulo
-    if (!currentMapData || !currentMapData.tileGrid) {
-        drawGroundGrid(); 
+function drawGround(ctx, groundTypes, cameraAngle = 0, worldBounds, projectFunc, maxHeightToDraw = 999) {
+   if (!currentMapData || !currentMapData.tileGrid) {
+        drawGroundGrid(); // Dibuja una rejilla si no hay mapa
         return;
     }
-    const voidDef = groundTypes['void'] || { color: '#111' }; 
-    
-    // --- ¡NUEVA LÓGICA DE DIRECCIÓN DE BUCLE! ---
+
+    if (!worldBounds) {
+        worldBounds = {
+            minX: 0, maxX: currentMapData.width,
+            minZ: 0, maxZ: currentMapData.height
+        };
+    }
+
+    const voidDef = groundTypes['void'] || { color: '#111' };
+
     const cosA = Math.cos(cameraAngle);
     const sinA = Math.sin(cameraAngle);
+    const xDepth = cosA + sinA;
+    const zDepth = cosA - sinA;
 
-    // Determinar la dirección de los ejes del mundo en la pantalla
-    const xDepth = cosA + sinA; // Profundidad del eje X
-    const zDepth = cosA - sinA; // Profundidad del eje Z
+    const mapMinZ = 0;
+    const mapMaxZ = currentMapData.height - 1;
+    const mapMinX = 0;
+    const mapMaxX = currentMapData.width - 1;
 
-    // Configurar bucles para dibujar de atrás hacia adelante
-    const zStart = (zDepth > 0) ? 0 : currentMapData.height - 1;
-    const zEnd = (zDepth > 0) ? currentMapData.height : -1;
+    const zLoopStart = Math.max(mapMinZ, Math.floor(worldBounds.minZ));
+    const zLoopEnd = Math.min(mapMaxZ, Math.ceil(worldBounds.maxZ));
+    const xLoopStart = Math.max(mapMinX, Math.floor(worldBounds.minX));
+    const xLoopEnd = Math.min(mapMaxX, Math.ceil(worldBounds.maxX));
+
+    const zStart = (zDepth > 0) ? zLoopStart : zLoopEnd;
+    const zEnd = (zDepth > 0) ? zLoopEnd + 1 : zLoopStart - 1;
     const zIncrement = (zDepth > 0) ? 1 : -1;
 
-    const xStart = (xDepth > 0) ? 0 : currentMapData.width - 1;
-    const xEnd = (xDepth > 0) ? currentMapData.width : -1;
+    const xStart = (xDepth > 0) ? xLoopStart : xLoopEnd;
+    const xEnd = (xDepth > 0) ? xLoopEnd + 1 : xLoopStart - 1;
     const xIncrement = (xDepth > 0) ? 1 : -1;
 
     for (let z = zStart; z !== zEnd; z += zIncrement) {
         for (let x = xStart; x !== xEnd; x += xIncrement) {
-    // --- Fin de la nueva lógica ---
             
+            if (z < 0 || z >= currentMapData.height || x < 0 || x >= currentMapData.width) {
+                continue;
+            }
+
             const tile = currentMapData.tileGrid[z][x];
-            const groundDef = (tile && groundTypes[tile.g]) 
-                              ? groundTypes[tile.g] 
-                              : voidDef; 
-            
+
+            // --- ¡NUEVO! Comprobar altura ANTES de dibujar ---
             const height = (tile && tile.h !== undefined) ? tile.h : 1.0;
-            
-            // ¡MODIFICADO! Pasar el ángulo
-            drawGroundTile(ctx, project, x, z, groundDef, height, currentZoom, cameraAngle);
+            if (height > maxHeightToDraw) {
+                continue; // Saltar este tile, se dibujará en el gameLoop
+            }
+            // --- FIN DEL NUEVO CÓDIGO ---
+
+            const groundDef = (tile && groundTypes[tile.g])
+                              ? groundTypes[tile.g]
+                              : voidDef;
+
+            // ¡MODIFICADO! 'height' ya se ha calculado arriba
+            // const height = (tile && tile.h !== undefined) ? tile.h : 1.0; 
+
+            drawGroundTile(ctx, projectFunc, x, z, groundDef, height, currentZoom, cameraAngle);
         }
     }
 }
@@ -808,7 +1067,7 @@ function drawGround(groundTypes, cameraAngle = 0) { // <-- ¡NUEVO! Aceptar áng
 function drawGroundGrid() {
     ctx.strokeStyle = '#4CAF50';
     ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.5; 
+    ctx.globalAlpha = 0.5;
     const gridSize = 20;
     for (let i = -gridSize; i <= gridSize; i++) {
         let p1 = project(i, 0, -gridSize);
@@ -818,7 +1077,7 @@ function drawGroundGrid() {
         let p4 = project(gridSize, 0, i);
         ctx.beginPath(); ctx.moveTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y); ctx.stroke();
     }
-    ctx.globalAlpha = 1.0; 
+    ctx.globalAlpha = 1.0;
 }
 
 /**
@@ -843,7 +1102,7 @@ function drawPlayer(player, screenPos) {
         ctx.fillRect(
             screenPos.x - fallbackWidth / 2,
             screenPos.y - fallbackHeight,
-            fallbackWidth, 
+            fallbackWidth,
             fallbackHeight
         );
     }
@@ -851,8 +1110,8 @@ function drawPlayer(player, screenPos) {
     ctx.textAlign = 'center';
     ctx.font = `${12 * currentZoom}px Inter`;
     ctx.fillText(
-        player.id.substring(0, 6), 
-        screenPos.x, 
+        player.id.substring(0, 6),
+        screenPos.x,
         screenPos.y - scaledImgHeight - (5 * currentZoom) // Texto encima de la cabeza
     );
 }
@@ -862,25 +1121,25 @@ function drawPlayer(player, screenPos) {
  * Chequeo de colisión (incluye escalones).
  */
 function isPositionPassable(worldX, worldZ) {
-    if (!currentMapData || !currentMapData.tileGrid) return false; 
+    if (!currentMapData || !currentMapData.tileGrid) return false;
     const tileX = Math.floor(worldX);
     const tileZ = Math.floor(worldZ);
     if (tileX < 0 || tileX >= currentMapData.width || tileZ < 0 || tileZ >= currentMapData.height) {
         return false; // Fuera del mapa
     }
     const tile = currentMapData.tileGrid[tileZ][tileX];
-    if (!tile) return false; 
-    
+    if (!tile) return false;
+
     const groundDef = GAME_DEFINITIONS.groundTypes[tile.g];
     const elementId = (typeof tile.e === 'object' && tile.e !== null) ? tile.e.id : tile.e;
     const elementDef = GAME_DEFINITIONS.elementTypes[elementId];
-    
-    if (!groundDef || !elementDef) return false; 
-    
+
+    if (!groundDef || !elementDef) return false;
+
     if (elementDef.drawType === 'block') {
         return false; // Los bloques siempre colisionan
     }
-    
+
     const basePassable = groundDef.passable && elementDef.passable;
     if (!basePassable) {
         return false;
@@ -889,13 +1148,13 @@ function isPositionPassable(worldX, worldZ) {
     // --- Chequeo de Altura ---
     const myPlayer = interpolatedPlayersState[myPlayerId];
     if (!myPlayer) {
-        return true; 
+        return true;
     }
 
     // ¡MODIFICADO! Usar la Y visual suavizada para una colisión más natural
-    const currentHeight = interpolatedPlayerVisualY - playerSize; 
+    const currentHeight = interpolatedPlayerVisualY - playerSize;
     const targetHeight = getGroundHeightAt(worldX, worldZ);
-    
+
     // ¡MODIFICADO! Aumentar el MAX_STEP_HEIGHT ligeramente para compensar la interpolación
     const MAX_STEP_HEIGHT = 1.0; // ¡Ajustado a 1.0!
 
@@ -915,30 +1174,30 @@ function getPortalDestination(worldX, worldZ) {
         return null;
     }
     const tile = currentMapData.tileGrid[tileZ][tileX];
-    
+
     if (tile && typeof tile.e === 'object' && tile.e.id) {
         const elementId = tile.e.id;
         const elementDef = GAME_DEFINITIONS.elementTypes[elementId];
-        
-        if (elementDef && elementDef.drawType === 'portal') 
+
+        if (elementDef && elementDef.drawType === 'portal')
         {
             if (tile.e.destMap && tile.e.destX !== null && tile.e.destZ !== null) {
-                return { 
-                    mapId: tile.e.destMap, 
-                    x: tile.e.destX + 0.5, 
-                    z: tile.e.destZ + 0.5 
+                return {
+                    mapId: tile.e.destMap,
+                    x: tile.e.destX + 0.5,
+                    z: tile.e.destZ + 0.5
                 };
             }
             else if (tile.e.destX !== null && tile.e.destZ !== null) {
-                return { 
-                    mapId: currentMapId, 
-                    x: tile.e.destX + 0.5, 
-                    z: tile.e.destZ + 0.5 
+                return {
+                    mapId: currentMapId,
+                    x: tile.e.destX + 0.5,
+                    z: tile.e.destZ + 0.5
                 };
             }
         }
     }
-    
+
     return null;
 }
 
@@ -957,14 +1216,14 @@ function hideNpcModal() {
     }
 }
 
-function getNpcInteraction(worldX, worldZ) { 
+function getNpcInteraction(worldX, worldZ) {
     const myPlayer = interpolatedPlayersState[myPlayerId];
     if (!myPlayer) {
         return false;
     }
 
     let clickedNpc = null;
-    let minDistanceSq = INTERACTION_RADIUS * INTERACTION_RADIUS; 
+    let minDistanceSq = INTERACTION_RADIUS * INTERACTION_RADIUS;
 
     for (const npc of Object.values(npcStates)) {
         const dx = npc.x - worldX; // Distancia del NPC al CLIC
@@ -978,13 +1237,13 @@ function getNpcInteraction(worldX, worldZ) {
     }
 
     if (!clickedNpc) {
-        return false; 
+        return false;
     }
 
     if (clickedNpc.interaction !== 'dialog') {
-        return false; 
+        return false;
     }
-    
+
     const playerX = myPlayer.x;
     const playerZ = myPlayer.z;
     const npcX = clickedNpc.x;
@@ -995,7 +1254,7 @@ function getNpcInteraction(worldX, worldZ) {
     if (distance <= MELEE_RANGE) {
         console.log(`Interactuando con NPC ${clickedNpc.id}. Distancia: ${distance}`);
         showNpcModal(clickedNpc.dialogText);
-        return true; 
+        return true;
     } else {
         console.log(`NPC ${clickedNpc.id} demasiado lejos. Distancia: ${distance}`);
         return false;

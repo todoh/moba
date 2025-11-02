@@ -5,8 +5,7 @@
 import { ref, update } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { inverseProject } from './camera.js';
 // ¡NUEVO! Importar la Y visual del jugador
-import { getPlayerVisualY } from './main.js';
-
+import { getPlayerGroundY } from './main.js';
 // Variables locales del módulo
 let _myPlayerId;
 let _db;
@@ -69,10 +68,9 @@ export function setupClickMove2_5D(canvas) {
 
         // --- ¡MODIFICACIÓN CLAVE! ---
         // 1. Obtener la Y visual ACTUAL del jugador (suavizada)
-        const playerVisualY = getPlayerVisualY();
+const playerGroundY = getPlayerGroundY();
         // 2. Proyectar el clic usando esa altura
-        const worldCoords = inverseProject(screenX, screenY, playerVisualY);
-        // -----------------------------
+const worldCoords = inverseProject(screenX, screenY, playerGroundY);        // -----------------------------
         
         const myPlayerRef = ref(_db, `moba-demo-players-3d/${_myPlayerId}`);
 

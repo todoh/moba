@@ -75,7 +75,14 @@ function drawTexturePolygon(ctx, img, p1, p2, p3, p4, fallbackColor = '#FF00FF')
  * Dibuja un sprite genérico (como un árbol, roca, o NPC).
  * ¡MODIFICADO! 'worldY' es ahora la altura del suelo.
  */
-function drawSprite(ctx, project, definition, zoom, worldX, worldY, worldZ, isHovered = false, instanceData = null, cameraAngle = 0) {     
+function drawSprite(ctx, projectFunc, definition, zoom, worldX, worldY, worldZ, isHovered = false, instanceData = null, cameraAngle = 0) {
+    
+    // --- ¡¡¡CORRECCIÓN!!! ---
+    // Faltaba proyectar las coordenadas. Usamos projectFunc (que será 'project')
+    // Proyectamos en la base (worldY)
+    const projectedPos = projectFunc(worldX, worldY, worldZ);
+    // --- FIN CORRECCIÓN ---
+    
     const img = definition.img; 
     
     ctx.save(); 
@@ -127,9 +134,16 @@ function drawSprite(ctx, project, definition, zoom, worldX, worldY, worldZ, isHo
 /**
  * Dibuja un portal.
  * ¡MODIFICADO! 'worldY' es ahora la altura del suelo.
+ *
+ * ¡¡¡MODIFICADO PARA ARREGLAR BUG!!!
  */
-function drawPortal(ctx, project, definition, zoom, worldX, worldY, worldZ, isHovered = false, instanceData = null, cameraAngle = 0) {  
-      const projectedPos = project(worldX, worldY, worldZ); // Proyectar en la altura del suelo
+function drawPortal(ctx, projectFunc, definition, zoom, worldX, worldY, worldZ, isHovered = false, instanceData = null, cameraAngle = 0) {
+    
+    // --- ¡¡¡CAMBIO CLAVE!!! ---
+    // Se estaba usando 'project()' global en lugar de 'projectFunc'
+    const projectedPos = projectFunc(worldX, worldY, worldZ); // Proyectar en la altura del suelo
+    // --- ¡¡¡FIN DEL CAMBIO!!! ---
+    
     const fontSize = (definition.baseWidth || 20) * zoom;
     const symbol = definition.symbol || '🌀'; 
 
@@ -349,7 +363,7 @@ function shadeColor(color, percent) {
 
     R = Math.floor(R * (1 + percent));
     G = Math.floor(G * (1 + percent));
-    B = Math.floor(B * (1 + percent));
+    B = Math.floor(G * (1 + percent));
 
     R = Math.min(255, Math.max(0, R));
     G = Math.min(255, Math.max(0, G));
@@ -368,10 +382,17 @@ function shadeColor(color, percent) {
  * Dibuja un cubo isométrico con culling de caras traseras.
  * Esta función dibujará las 3 caras visibles correctas (2 laterales, 1 superior)
  * para cualquier ángulo de rotación.
+ *
+ * ¡¡¡CORREGIDO!!!
  */
-function drawIsometricCube(ctx, project, x, z, y_base, y_top, zoom, 
+function drawIsometricCube(ctx, projectFunc, x, z, y_base, y_top, zoom, 
                            imgTop, imgSideX, imgSideZ, 
                            cameraAngle, fallbackColor) {
+
+    // --- ¡¡¡CAMBIO CLAVE!!! ---
+    // Se ha renombrado el parámetro de 'project' a 'projectFunc'.
+    // Esto asegura que estemos usando la función que se pasó como argumento
+    // (projectForCache) y no la 'project' global importada en este archivo.
 
     // Calcular cos y sin del ángulo
     const cosA = Math.cos(cameraAngle);
@@ -383,16 +404,17 @@ function drawIsometricCube(ctx, project, x, z, y_base, y_top, zoom,
     const seeFacePlusZ = (cosA - sinA) > 0;
 
     // 2. Calcular los 8 vértices
+    // ¡¡¡Usar projectFunc!!!
     // Base
-    const p_base_00 = project(x,     y_base, z);     // Vértice (x, z)
-    const p_base_10 = project(x + 1, y_base, z);     // Vértice (x+1, z)
-    const p_base_11 = project(x + 1, y_base, z + 1); // Vértice (x+1, z+1)
-    const p_base_01 = project(x,     y_base, z + 1); // Vértice (x, z+1)
+    const p_base_00 = projectFunc(x,     y_base, z);     // Vértice (x, z)
+    const p_base_10 = projectFunc(x + 1, y_base, z);     // Vértice (x+1, z)
+    const p_base_11 = projectFunc(x + 1, y_base, z + 1); // Vértice (x+1, z+1)
+    const p_base_01 = projectFunc(x,     y_base, z + 1); // Vértice (x, z+1)
     // Techo
-    const p_top_00 = project(x,     y_top, z);
-    const p_top_10 = project(x + 1, y_top, z);
-    const p_top_11 = project(x + 1, y_top, z + 1);
-    const p_top_01 = project(x,     y_top, z + 1);
+    const p_top_00 = projectFunc(x,     y_top, z);
+    const p_top_10 = projectFunc(x + 1, y_top, z);
+    const p_top_11 = projectFunc(x + 1, y_top, z + 1);
+    const p_top_01 = projectFunc(x,     y_top, z + 1);
     
     // 3. Definir colores de fallback (para dar sombra)
     const fallbackColorX = fallbackColor;
@@ -423,3 +445,4 @@ function drawIsometricCube(ctx, project, x, z, y_base, y_top, zoom,
     // Cara SUPERIOR (siempre se ve)
     drawTexturePolygon(ctx, imgTop, p_top_00, p_top_10, p_top_11, p_top_01, fallbackColor);
 }
+
