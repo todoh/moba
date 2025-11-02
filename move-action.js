@@ -1,17 +1,18 @@
 // ==================================================
 // ### LÓGICA DE ACCIÓN DE MOVIMIENTO (MOVE-ACTION.JS) ###
 // ==================================================
-// ¡MODIFICADO! Añade _npcHandler y cambia el orden de la lógica
 
 import { ref, update } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { inverseProject } from './camera.js';
+// ¡NUEVO! Importar la Y visual del jugador
+import { getPlayerVisualY } from './main.js';
 
-// Variables locales del módulo (¡MODIFICADO!)
+// Variables locales del módulo
 let _myPlayerId;
 let _db;
 let _collisionChecker = (x, z) => false; 
 let _portalHandler = (x, z) => null;
-let _npcHandler = (x, z) => false; // <-- AÑADIDO
+let _npcHandler = (x, z) => false; 
 let _getCurrentMapId = () => null;
 
 /**
@@ -38,7 +39,7 @@ export function setPortalHandler(handlerFunc) {
 }
 
 /**
- * ¡NUEVO! Establece la función que se usará para chequear NPCs.
+ * Establece la función que se usará para chequear NPCs. (sin cambios)
  */
 export function setNpcHandler(handlerFunc) {
     _npcHandler = handlerFunc;
@@ -47,7 +48,7 @@ export function setNpcHandler(handlerFunc) {
 
 /**
  * Configura el listener de clic/toque para mover
- * (¡MODIFICADO! Cambia el orden de la lógica)
+ * ¡MODIFICADO! Ahora usa la Y del jugador para la proyección inversa.
  */
 export function setupClickMove2_5D(canvas) {
     
@@ -66,52 +67,50 @@ export function setupClickMove2_5D(canvas) {
             screenY = event.clientY;
         }
 
-        const worldCoords = inverseProject(screenX, screenY);
+        // --- ¡MODIFICACIÓN CLAVE! ---
+        // 1. Obtener la Y visual ACTUAL del jugador (suavizada)
+        const playerVisualY = getPlayerVisualY();
+        // 2. Proyectar el clic usando esa altura
+        const worldCoords = inverseProject(screenX, screenY, playerVisualY);
+        // -----------------------------
+        
         const myPlayerRef = ref(_db, `moba-demo-players-3d/${_myPlayerId}`);
 
-        // ===================================
-        // ### LÓGICA DE CLICK MODIFICADA ###
-        // ===================================
-
+        // Lógica de chequeo (sin cambios)
+        
         // --- 1. CHEQUEO DE INTERACCIÓN NPC ---
-        // El _npcHandler ahora comprueba la distancia y muestra el modal él mismo
         const interactionHappened = _npcHandler(worldCoords.x, worldCoords.z);
         if (interactionHappened) {
-            return; // Si interactuamos, no hacemos nada más (ni mover, ni portal)
+            return; 
         }
 
         // --- 2. LÓGICA DE PORTAL ---
         const portalDest = _portalHandler(worldCoords.x, worldCoords.z);
         if (portalDest) {
-            // Se encontró un portal
             const localMapId = _getCurrentMapId();
-            
             if (portalDest.mapId && portalDest.mapId !== localMapId) {
-                // --- ¡PORTAL INTER-MAPA! ---
                 update(myPlayerRef, {
                     x: portalDest.x,
                     z: portalDest.z,
                     currentMap: portalDest.mapId
                 });
             } else {
-                // --- Portal local (mismo mapa) ---
                 update(myPlayerRef, {
                     x: portalDest.x,
                     z: portalDest.z
                 });
             }
-            return; // Usamos el portal, no hacemos nada más
+            return; 
         }
         
         // --- 3. CHEQUEO DE COLISIÓN ---
         if (!_collisionChecker(worldCoords.x, worldCoords.z)) {
             console.warn("Movimiento bloqueado: Casilla no transitable en", worldCoords);
             showBlockedClick(screenX, screenY);
-            return; // Colisión, no mover
+            return; 
         }
 
         // --- 4. MOVIMIENTO NORMAL ---
-        // Si no interactuamos, no usamos portal y no colisionamos, nos movemos.
         update(myPlayerRef, {
             x: worldCoords.x,
             z: worldCoords.z
@@ -123,10 +122,9 @@ export function setupClickMove2_5D(canvas) {
 }
 
 /**
- * Muestra un pequeño indicador visual de "X"... (sin cambios)
+ * Muestra un pequeño indicador visual de "X". (sin cambios)
  */
 function showBlockedClick(screenX, screenY) {
-    // ... (código sin cambios) ...
     let indicator = document.createElement('div');
     indicator.textContent = '❌';
     indicator.style.position = 'absolute';
@@ -150,3 +148,4 @@ function showBlockedClick(screenX, screenY) {
         document.body.removeChild(indicator);
     }, 600); 
 }
+

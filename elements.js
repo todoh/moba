@@ -38,7 +38,7 @@ function getImage(src) {
 // a las definiciones cargadas de Firebase.
 
 /**
- * ¡NUEVO! Dibuja un polígono con textura.
+ * Dibuja un polígono con textura.
  * (p1 = origen, p2 = eje u, p4 = eje v)
  */
 function drawTexturePolygon(ctx, img, p1, p2, p3, p4, fallbackColor = '#FF00FF') {
@@ -73,15 +73,14 @@ function drawTexturePolygon(ctx, img, p1, p2, p3, p4, fallbackColor = '#FF00FF')
 
 /**
  * Dibuja un sprite genérico (como un árbol, roca, o NPC).
- * ¡MODIFICADO! Nueva firma de función.
+ * ¡MODIFICADO! 'worldY' es ahora la altura del suelo.
  */
-function drawSprite(ctx, project, definition, zoom, worldX, worldY, worldZ, isHovered = false, instanceData = null) {
-    const projectedPos = project(worldX, worldY, worldZ); // Proyectar aquí
+function drawSprite(ctx, project, definition, zoom, worldX, worldY, worldZ, isHovered = false, instanceData = null, cameraAngle = 0) {     
     const img = definition.img; 
     
     ctx.save(); 
 
-    // Dibujar un círculo de sombra
+    // Dibujar un círculo de sombra EN LA BASE (Y=worldY)
     const INTERACTION_RADIUS = 0.75; 
     const shadowRadiusX = INTERACTION_RADIUS * (BASE_ISO_TILE_W_HALF * zoom);
     const shadowRadiusY = INTERACTION_RADIUS * (BASE_ISO_TILE_H_HALF * zoom);
@@ -90,7 +89,7 @@ function drawSprite(ctx, project, definition, zoom, worldX, worldY, worldZ, isHo
     ctx.beginPath();
     ctx.ellipse(
         projectedPos.x, 
-        projectedPos.y, 
+        projectedPos.y, // La 'y' proyectada ya incluye la altura del suelo
         shadowRadiusX,  
         shadowRadiusY,  
         0, 0, 2 * Math.PI
@@ -116,7 +115,7 @@ function drawSprite(ctx, project, definition, zoom, worldX, worldY, worldZ, isHo
         ctx.drawImage(
             img,
             projectedPos.x - scaledWidth / 2, 
-            projectedPos.y - scaledHeight,
+            projectedPos.y - scaledHeight, // Dibujar hacia arriba desde los pies
             scaledWidth,
             scaledHeight
         );
@@ -127,10 +126,10 @@ function drawSprite(ctx, project, definition, zoom, worldX, worldY, worldZ, isHo
 
 /**
  * Dibuja un portal.
- * ¡MODIFICADO! Nueva firma de función.
+ * ¡MODIFICADO! 'worldY' es ahora la altura del suelo.
  */
-function drawPortal(ctx, project, definition, zoom, worldX, worldY, worldZ, isHovered = false, instanceData = null) {
-    const projectedPos = project(worldX, worldY, worldZ); // Proyectar aquí
+function drawPortal(ctx, project, definition, zoom, worldX, worldY, worldZ, isHovered = false, instanceData = null, cameraAngle = 0) {  
+      const projectedPos = project(worldX, worldY, worldZ); // Proyectar en la altura del suelo
     const fontSize = (definition.baseWidth || 20) * zoom;
     const symbol = definition.symbol || '🌀'; 
 
@@ -164,57 +163,35 @@ function drawPortal(ctx, project, definition, zoom, worldX, worldY, worldZ, isHo
     ctx.restore(); 
 }
 
-/**
- * ¡NUEVO! Dibuja un bloque 3D.
- */
-function drawBlock(ctx, project, definition, zoom, worldX, worldY, worldZ, isHovered = false, instanceData = null) {
+function drawBlock(ctx, project, definition, zoom, worldX, worldY, worldZ, isHovered = false, instanceData = null, cameraAngle = 0) {
     // worldX/Z son el *centro* (ej: 10.5, 5.5). Restamos 0.5 para obtener la esquina.
     const x = worldX - 0.5;
     const z = worldZ - 0.5;
     
-    // Obtener la altura de la instancia (del editor), con fallback a 1.0
-const height = (definition && definition.height) ? parseFloat(definition.height) : 1.0;    
-    const y_base = 0;
-    const y_top = height;
+    // Obtener la altura de la definición, con fallback a 1.0
+    const height = (definition && definition.height) ? parseFloat(definition.height) : 1.0;    
+    
+    // La base es la altura del suelo, el techo es base + altura del bloque.
+    const y_base = worldY; 
+    const y_top = worldY + height;
 
     // Obtener las texturas
     const imgTop = definition.imgTop;
-    const imgLeft = definition.imgLeft;
-    const imgRight = definition.imgRight;
-
-    // Calcular los 8 vértices del cubo
-    // Base
-    const p_base_front = project(x, y_base, z);
-    const p_base_right = project(x + 1, y_base, z);
-    const p_base_back = project(x + 1, y_base, z + 1);
-    const p_base_left = project(x, y_base, z + 1);
-    // Techo
-    const p_top_front = project(x, y_top, z);
-    const p_top_right = project(x + 1, y_top, z);
-    const p_top_back = project(x + 1, y_top, z + 1);
-    const p_top_left = project(x, y_top, z + 1);
+    const imgSideX = definition.imgRight; // Usaremos esta para +X y -X
+    const imgSideZ = definition.imgLeft;  // Usaremos esta para +Z y -Z
+    const fallbackColor = definition.color || '#999999';
 
     ctx.save();
     if (isHovered) {
         ctx.filter = 'brightness(1.3) drop-shadow(0 0 5px #ffffff)';
     }
 
-    // Dibujar las caras (de atrás para adelante)
-    
-    // Cara Derecha (+X)
-    // Vértices: (x+1, 0, z), (x+1, Y, z), (x+1, Y, z+1), (x+1, 0, z+1)
-    // p1=p_base_right, p2=p_top_right, p3=p_top_back, p4=p_base_back
-    drawTexturePolygon(ctx, imgRight, p_base_right, p_top_right, p_top_back, p_base_back, '#999999');
-
-    // Cara Izquierda (+Z)
-    // Vértices: (x, 0, z+1), (x, Y, z+1), (x+1, Y, z+1), (x+1, 0, z+1)
-    // p1=p_base_left, p2=p_top_left, p3=p_top_back, p4=p_base_back
-    drawTexturePolygon(ctx, imgLeft, p_base_left, p_top_left, p_top_back, p_base_back, '#777777');
-    
-    // Cara Superior (Techo)
-    // Vértices: (x, Y, z), (x+1, Y, z), (x+1, Y, z+1), (x, Y, z+1)
-    // p1=p_top_front, p2=p_top_right, p3=p_top_back, p4=p_top_left
-    drawTexturePolygon(ctx, imgTop, p_top_front, p_top_right, p_top_back, p_top_left, '#BBBBBB');
+    // ¡Llamar a la nueva función!
+    drawIsometricCube(
+        ctx, project, x, z, y_base, y_top, zoom,
+        imgTop, imgSideX, imgSideZ,
+        cameraAngle, fallbackColor
+    );
     
     ctx.restore();
 }
@@ -222,10 +199,8 @@ const height = (definition && definition.height) ? parseFloat(definition.height)
 
 /**
  * No dibuja nada (para 'none').
- * ¡MODIFICADO! Nueva firma de función.
  */
-function drawNone(ctx, project, definition, zoom, worldX, worldY, worldZ, isHovered = false, instanceData = null) {
-    // No hacer nada
+function drawNone(ctx, project, definition, zoom, worldX, worldY, worldZ, isHovered = false, instanceData = null, cameraAngle = 0) {    // No hacer nada
 }
 
 // Mapeo de "tipos de dibujo" (strings) a funciones
@@ -233,14 +208,13 @@ const DRAW_FUNCTIONS = {
     'sprite': drawSprite,
     'portal': drawPortal,
     'none': drawNone,
-    'block': drawBlock // ¡NUEVO!
+    'block': drawBlock 
 };
 
 
 /**
  * Carga TODAS las definiciones de juego (terrenos y elementos) desde Firebase.
- * @param {Database} db - La instancia de Firebase Database.
- * @returns {Promise<object>} - Una promesa que resuelve a { groundTypes, elementTypes }
+ * ¡MODIFICADO! Carga texturas 3D para 'groundTypes'.
  */
 export async function loadGameDefinitions(db) {
     console.log("Cargando definiciones del juego desde Firebase...");
@@ -260,15 +234,19 @@ export async function loadGameDefinitions(db) {
     const elementTypes = data.elementTypes || {};
     const npcTypes = data.npcTypes || {};
     const portalTypes = data.portalTypes || {};
-    const blockTypes = data.blockTypes || {}; // ¡NUEVO!
+    const blockTypes = data.blockTypes || {}; 
 
-    const allElementTypes = { ...elementTypes, ...npcTypes, ...portalTypes, ...blockTypes }; // ¡NUEVO!
+    const allElementTypes = { ...elementTypes, ...npcTypes, ...portalTypes, ...blockTypes }; 
 
 
     // --- Procesar Ground Types ---
     for (const key in groundTypes) {
         const def = groundTypes[key];
-        def.img = getImage(def.imgSrc); // Asignar la imagen (cargando)
+        // ¡MODIFICADO! Cargar texturas 3D para el suelo
+        def.imgTop = getImage(def.imgSrcTop);
+        def.imgLeft = getImage(def.imgSrcLeft);
+        def.imgRight = getImage(def.imgSrcRight);
+        def.img = null; // Ya no usamos la imagen plana genérica
     }
     
     if (!groundTypes['void']) {
@@ -279,13 +257,12 @@ export async function loadGameDefinitions(db) {
     for (const key in allElementTypes) {
         const def = allElementTypes[key];
         
-        // ¡MODIFICADO! Cargar imágenes según el tipo
         if (blockTypes[key]) {
             // Es un bloque, cargar sus 3 texturas
             def.imgTop = getImage(def.imgSrcTop);
             def.imgLeft = getImage(def.imgSrcLeft);
             def.imgRight = getImage(def.imgSrcRight);
-            def.img = null; // Los bloques no usan la 'img' genérica
+            def.img = null; 
         } else {
             // Es un sprite, npc, o portal con imagen
             def.img = getImage(def.imgSrc); 
@@ -296,7 +273,7 @@ export async function loadGameDefinitions(db) {
             def.drawType = 'none';
         } else if (portalTypes[key]) {
             def.drawType = 'portal';
-        } else if (blockTypes[key]) { // ¡NUEVO!
+        } else if (blockTypes[key]) { 
              def.drawType = 'block';
         } else {
             def.drawType = 'sprite'; // (NPCs y Elementos)
@@ -307,7 +284,7 @@ export async function loadGameDefinitions(db) {
             def.draw = DRAW_FUNCTIONS['portal']; 
         } else if (def.drawType === 'none') {
             def.draw = DRAW_FUNCTIONS['none'];
-        } else if (def.drawType === 'block') { // ¡NUEVO!
+        } else if (def.drawType === 'block') { 
             def.draw = DRAW_FUNCTIONS['block'];
         } else {
             // Un Sprite (NPC, Elemento, o un Portal CON imagen)
@@ -326,17 +303,123 @@ export async function loadGameDefinitions(db) {
 
 
 /**
- * Dibuja un polígono isométrico para una casilla de suelo.
+ * ¡MODIFICADO! Dibuja un polígono isométrico para una casilla de suelo.
+ * Ahora usa altura y renderiza 3 caras, como un bloque.
  */
-export function drawGroundTile(ctx, project, x, z, groundDef, zoom) {
+export function drawGroundTile(ctx, project, x, z, groundDef, height, zoom, cameraAngle = 0) { // <-- ¡MODIFICADO!
     
-    const p1 = project(x, 0, z); // Esquina superior
-    const p2 = project(x + 1, 0, z);
-    const p3 = project(x + 1, 0, z + 1);
-    const p4 = project(x, 0, z + 1);
+    // Si la altura es 0 o menos, no dibujar nada.
+    if (height <= 0) return;
+
+    // Obtener las texturas
+    const imgTop = groundDef.imgTop;
+    const imgSideX = groundDef.imgRight; // Usaremos esta para +X y -X
+    const imgSideZ = groundDef.imgLeft;  // Usaremos esta para +Z y -Z
+    const fallbackColor = groundDef.color || '#FF00FF';
+
+    // Definir la base (siempre en Y=0) y el techo (en la altura del tile)
+    const y_base = 0;
+    const y_top = height;
+
+    // ¡Llamar a la nueva función!
+    drawIsometricCube(
+        ctx, project, x, z, y_base, y_top, zoom,
+        imgTop, imgSideX, imgSideZ,
+        cameraAngle, fallbackColor
+    );
+}
+function shadeColor(color, percent) {
+    // Manejar colores no válidos
+    if (!color || color[0] !== '#' || (color.length !== 7 && color.length !== 4)) {
+        return color; 
+    }
     
-    const img = groundDef.img;
+    let R, G, B;
+
+    // Manejar hex corto (#F03)
+    if (color.length === 4) {
+        R = parseInt(color[1] + color[1], 16);
+        G = parseInt(color[2] + color[2], 16);
+        B = parseInt(color[3] + color[3], 16);
+    } else { // Manejar hex largo (#FF0033)
+        R = parseInt(color.substring(1, 3), 16);
+        G = parseInt(color.substring(3, 5), 16);
+        B = parseInt(color.substring(5, 7), 16);
+    }
+
+    R = Math.floor(R * (1 + percent));
+    G = Math.floor(G * (1 + percent));
+    B = Math.floor(B * (1 + percent));
+
+    R = Math.min(255, Math.max(0, R));
+    G = Math.min(255, Math.max(0, G));
+    B = Math.min(255, Math.max(0, B));
+
+    const RR = R.toString(16).padStart(2, '0');
+    const GG = G.toString(16).padStart(2, '0');
+    const BB = B.toString(16).padStart(2, '0');
+
+    return `#${RR}${GG}${BB}`;
+}
+
+
+/**
+ * ¡NUEVO!
+ * Dibuja un cubo isométrico con culling de caras traseras.
+ * Esta función dibujará las 3 caras visibles correctas (2 laterales, 1 superior)
+ * para cualquier ángulo de rotación.
+ */
+function drawIsometricCube(ctx, project, x, z, y_base, y_top, zoom, 
+                           imgTop, imgSideX, imgSideZ, 
+                           cameraAngle, fallbackColor) {
+
+    // Calcular cos y sin del ángulo
+    const cosA = Math.cos(cameraAngle);
+    const sinA = Math.sin(cameraAngle);
+
+    // 1. Determinar visibilidad de las caras
+    // (Basado en la dirección del vector de profundidad que calculamos en main.js)
+    const seeFacePlusX = (cosA + sinA) > 0;
+    const seeFacePlusZ = (cosA - sinA) > 0;
+
+    // 2. Calcular los 8 vértices
+    // Base
+    const p_base_00 = project(x,     y_base, z);     // Vértice (x, z)
+    const p_base_10 = project(x + 1, y_base, z);     // Vértice (x+1, z)
+    const p_base_11 = project(x + 1, y_base, z + 1); // Vértice (x+1, z+1)
+    const p_base_01 = project(x,     y_base, z + 1); // Vértice (x, z+1)
+    // Techo
+    const p_top_00 = project(x,     y_top, z);
+    const p_top_10 = project(x + 1, y_top, z);
+    const p_top_11 = project(x + 1, y_top, z + 1);
+    const p_top_01 = project(x,     y_top, z + 1);
     
-    // Usar la función helper de textura
-    drawTexturePolygon(ctx, img, p1, p2, p3, p4, groundDef.color || '#FF00FF');
+    // 3. Definir colores de fallback (para dar sombra)
+    const fallbackColorX = fallbackColor;
+    const fallbackColorZ = shadeColor(fallbackColor, -0.2); // Cara Z 20% más oscura
+
+    // 4. Dibujar caras de atrás para adelante
+    
+    // Caras TRASERAS (las que NO se ven)
+    if (!seeFacePlusX) { 
+        // Cara -X (usa la misma textura que +X)
+        drawTexturePolygon(ctx, imgSideX, p_base_00, p_top_00, p_top_01, p_base_01, fallbackColorX);
+    }
+    if (!seeFacePlusZ) {
+        // Cara -Z (usa la misma textura que +Z)
+        drawTexturePolygon(ctx, imgSideZ, p_base_00, p_top_00, p_top_10, p_base_10, fallbackColorZ);
+    }
+
+    // Caras DELANTERAS (las que SÍ se ven)
+    if (seeFacePlusX) { 
+        // Cara +X
+        drawTexturePolygon(ctx, imgSideX, p_base_10, p_top_10, p_top_11, p_base_11, fallbackColorX);
+    }
+    if (seeFacePlusZ) {
+        // Cara +Z
+        drawTexturePolygon(ctx, imgSideZ, p_base_01, p_top_01, p_top_11, p_base_11, fallbackColorZ);
+    }
+
+    // Cara SUPERIOR (siempre se ve)
+    drawTexturePolygon(ctx, imgTop, p_top_00, p_top_10, p_top_11, p_top_01, fallbackColor);
 }
