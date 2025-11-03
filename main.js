@@ -549,6 +549,11 @@ function haveBoundsChanged(boundsA, boundsB) {
  * ¡¡¡MODIFICADO!!!
  * Bucle principal del juego.
  * Ahora ordena y dibuja TODOS los objetos 3D (jugadores, NPCs, bloques, suelo alto).
+ *//**
+ * ¡¡¡MODIFICADO!!!
+ * Bucle principal del juego.
+ * Ahora ordena y dibuja TODOS los objetos 3D (jugadores, NPCs, bloques, suelo alto).
+ * * --- ¡CORREGIDO! Error de 'ReferenceError: Cannot access 'playerGroundY' ---
  */
 function gameLoop() {
     if (!isGameLoopRunning) return;
@@ -567,12 +572,17 @@ function gameLoop() {
         interpolatedPlayerVisualY = interpolatedPlayersState[myPlayerId].y;
     }
 
+    // --- ¡¡¡CORRECCIÓN!!! ---
+    // Declaramos 'playerGroundY' aquí, ANTES de que se use.
+    const playerGroundY = interpolatedPlayerVisualY - playerSize;
+    // --- FIN DE LA CORRECCIÓN ---
+
     // 4. ¡MOVIDO! Actualizar la cámara AHORA (usa la Y nueva)
-    updateCameraPosition(myPlayerId, interpolatedPlayersState, canvas, interpolatedPlayerVisualY);
+    updateCameraPosition(myPlayerId, interpolatedPlayersState, canvas, playerGroundY);
+    
+    // Comprobar si la cámara se movió para invalidar el caché
     if (cameraOffset.x !== lastCameraOffsetX || cameraOffset.y !== lastCameraOffsetY) {
-        // Si la cámara se mueve, el caché que dibujamos en (0,0) necesita actualizarse
-        // para incluir las nuevas áreas.
-        isCacheInvalid = true; 
+        isCacheInvalid = true;
         lastCameraOffsetX = cameraOffset.x;
         lastCameraOffsetY = cameraOffset.y;
     }
@@ -581,7 +591,7 @@ function gameLoop() {
     updateHoveredState();
 
     // 6. Calcular límites visuales AHORA (usa la Y nueva)
-    const playerGroundY = interpolatedPlayerVisualY - playerSize;
+    // La línea 'const playerGroundY = ...' se movió hacia arriba
     const worldBounds = calculateVisibleWorldBounds(canvas, playerGroundY);
 
     // --- ¡NUEVA LÓGICA DE CACHÉ! ---
@@ -613,6 +623,7 @@ function gameLoop() {
     // --- AÑADIR JUGADORES ---
     for (const id in interpolatedPlayersState) {
         const p = interpolatedPlayersState[id];
+        // Comprobar si está dentro de los límites visibles
         if (p.x >= worldBounds.minX && p.x <= worldBounds.maxX &&
             p.z >= worldBounds.minZ && p.z <= worldBounds.maxZ)
         {
@@ -620,9 +631,8 @@ function gameLoop() {
                 id: p.id,
                 type: 'player',
                 x: p.x,
-                y: p.y, // Esta es la Y visual interpolada
+                y: p.y - playerSize, // Esta es la Y del SUELO
                 z: p.z
-                // ¡MODIFICADO! 'sortKey' eliminado. Se calculará dinámicamente.
             });
         }
     }
@@ -643,7 +653,6 @@ function gameLoop() {
                     z: npc.z,
                     isHovered: (hoveredItemKey === key),
                     instance: npc // Pasar la instancia del NPC
-                    // ¡MODIFICADO! 'sortKey' eliminado. Se calculará dinámicamente.
                 });
             }
         }
@@ -680,7 +689,6 @@ function gameLoop() {
                             z: z, 
                             isHovered: false, 
                             instance: null
-                            // ¡MODIFICADO! 'sortKey' eliminado. Se calculará dinámicamente.
                         });
                     }
                 }
@@ -700,7 +708,6 @@ function gameLoop() {
                         z: z + 0.5,
                         isHovered: (hoveredItemKey === itemKey),
                         instance: null
-                        // ¡MODIFICADO! 'sortKey' eliminado. Se calculará dinámicamente.
                     });
                 }
             }
@@ -715,16 +722,12 @@ function gameLoop() {
 
         renderables.sort((a, b) => {
             // Coordenadas del centro para el ordenado
-            // (Los items de suelo están en x,z, los demás en x+0.5, z+0.5,
-            // pero para ordenar, el centro (x+0.5, z+0.5) es más robusto para todos)
             let a_x = (a.type === 'ground') ? a.x + 0.5 : a.x;
             let a_z = (a.type === 'ground') ? a.z + 0.5 : a.z;
             let b_x = (b.type === 'ground') ? b.x + 0.5 : b.x;
             let b_z = (b.type === 'ground') ? b.z + 0.5 : b.z;
 
             // Calcular la "profundidad" de la pantalla para 'a' y 'b'
-            // Esta es la misma fórmula que determina la posición 'y' en la pantalla
-            // (antes de restar la altura del objeto)
             const depthA = (a_x * cosA - a_z * sinA) + (a_x * sinA + a_z * cosA);
             const depthB = (b_x * cosA - b_z * sinA) + (b_x * sinA + b_z * cosA);
 
@@ -732,11 +735,11 @@ function gameLoop() {
             // Si las profundidades son casi iguales, usar la altura Y como desempate.
             if (Math.abs(depthA - depthB) < 0.001) { 
                 
-                // 'ground' y 'element' (NPC) tienen 'y' como su *base* (e.g., 1.0)
-                // 'player' tiene 'y' como su *cabeza* (e.g., 2.0)
-                // Queremos que el desempate sea por la `y` de la *base*.
-                let a_y_base = (a.type === 'player') ? a.y - playerSize : a.y;
-                let b_y_base = (b.type === 'player') ? b.y - playerSize : b.y;
+                // Desempate por la `y` de la *base*.
+                // (Nota: 'y' en los 'renderables' ya es la 'y' de la base/suelo
+                // gracias a las correcciones anteriores)
+                let a_y_base = a.y;
+                let b_y_base = b.y;
                 
                 if (Math.abs(a_y_base - b_y_base) > 0.001) {
                     // Dibujar el que tenga base MÁS BAJA (e.g. suelo) primero.
@@ -751,14 +754,12 @@ function gameLoop() {
                 if (a.type !== 'ground' && b.type === 'ground') {
                     return 1; // 'b' (suelo) viene primero
                 }
-                // Si son dos players o dos NPCs, el orden no importa
+                
                 return 0;
             }
 
             // --- ¡¡¡CORRECCIÓN PRINCIPAL!!! ---
             // Orden principal por profundidad ASCENDENTE.
-            // Objetos con menor profundidad (más "arriba" en la pantalla) se dibujan
-            // PRIMERO.
             return depthA - depthB;
         });
     }
@@ -766,14 +767,16 @@ function gameLoop() {
     // 5. Dibujar TODO (¡MODIFICADO!)
     for (const item of renderables) {
         if (item.type === 'player') {
-            // ¡Importante! Usar el 'project' global (con offset)
-            const screenPos = project(item.x, item.y, item.z);
+            // Para dibujar el jugador, SÍ necesitamos la 'Y' de la cabeza.
+            // La 'y' en el item es la del suelo, así que sumamos playerSize.
+            const screenPos = project(item.x, item.y + playerSize, item.z);
             drawPlayer(item, screenPos);
 
         } else if (item.type === 'element') {
             // Dibuja NPCs, Bloques y Portales
+            // La 'y' en el item es la del suelo, que es lo que esperan
+            // las funciones de dibujo (drawSprite, drawBlock).
             if (item.definition.draw) {
-                // ¡Importante! Usar el 'project' global (con offset)
                 item.definition.draw(
                     ctx, project, item.definition, currentZoom,
                     item.x,
@@ -786,6 +789,7 @@ function gameLoop() {
             }
         } else if (item.type === 'ground') { // <-- ¡NUEVA SECCIÓN!
             // Dibuja el tile de suelo alto
+            // 'y' almacena la altura
             drawGroundTile(
                 ctx,
                 project, // El project global con offset

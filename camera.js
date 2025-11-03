@@ -179,7 +179,7 @@ export function updateCameraPosition(myPlayerId, interpolatedPlayersState, canva
     // El error estaba aquí. Se usaba 'rotatedZ' (que era 'undefined')
     // en lugar de 'rotatedPlayerZ'. Esto hacía que el offset fuera NaN.
     const playerScreenXWithoutOffset = (rotatedPlayerX - rotatedPlayerZ) * tileW; // <-- ¡ARREGLADO!
-    const playerScreenYWithoutOffset = (rotatedPlayerX + rotatedPlayerZ) * tileH - scaledPlayerHeight; // <-- ¡ARREGLADO!
+const playerScreenYWithoutOffset = (rotatedPlayerX + rotatedPlayerZ) * tileH - scaledPlayerHeight;
     // --- Fin de la corrección ---
 
     // El offset OBJETIVO es la diferencia
