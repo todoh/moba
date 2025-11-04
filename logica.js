@@ -69,8 +69,21 @@ export function getTileData(worldX, worldZ) {
 }
 
 /**
+ * ¡CORREGIDO!
+ * Obtiene la altura del SUELO (transitable) en un punto.
+ * IGNORA los bloques. Se usa para la altura VISUAL del jugador.
+ */
+export function getGroundHeightAt(worldX, worldZ) {
+    const tileX = Math.floor(worldX);
+    const tileZ = Math.floor(worldZ);
+    return getTileHeight(tileX, tileZ);
+}
+
+
+/**
  * Obtiene la altura LÓGICA (escalonada) en un punto.
- * Esta es la ÚNICA fuente de verdad para la altura.
+ * Esta es la fuente de verdad para la altura de COLISIÓN.
+ * (Incluye la altura de los bloques).
  */
 export function getLogicHeightAt(worldX, worldZ) {
     const tileX = Math.floor(worldX);
@@ -96,73 +109,74 @@ export function getLogicHeightAt(worldX, worldZ) {
 
 /**
  * Comprueba si una posición del mundo (x, z) es transitable.
+ * ¡MODIFICADO! Acepta "from" para chequear escalones.
  */
-export function isPositionPassable(worldX, worldZ, isNpc = false) {
+export function isPositionPassable(worldX, worldZ, fromX, fromZ, isNpc = false) { 
     if (!deps.currentMapData || !deps.currentMapData.tileGrid) return false;
+    
+    // --- 1. Chequeo de transitabilidad (Suelo y Elemento) ---
     const tileX = Math.floor(worldX);
     const tileZ = Math.floor(worldZ);
 
     const { tile, elementDef } = getTileData(worldX, worldZ);
     
-    // --- DEBUG: Punto de fallo 1 ---
     if (!tile) {
-        console.log(`[DEBUG] Bloqueo: Fuera de límites (x: ${tileX}, z: ${tileZ})`);
+        // console.log(`[DEBUG] Bloqueo: Fuera de límites (x: ${tileX}, z: ${tileZ})`);
         return false; // Fuera de los límites
     }
-    // --- FIN DEBUG ---
 
     const groundDef = deps.GAME_DEFINITIONS.groundTypes[tile.g];
     
-    // --- DEBUG: Punto de fallo 2 (EL MÁS PROBABLE) ---
     if (!groundDef) {
-        console.error(`[DEBUG] ¡BLOQUEO FATAL! La definición de suelo "${tile.g}" no existe en GAME_DEFINITIONS.`);
+        console.error(`[DEBUG] ¡BLOQUEO FATAL! La definición de suelo "${tile.g}" no existe.`);
         return false;
     }
-    // --- FIN DEBUG ---
 
-    // --- CORRECCIÓN ---
-    // (Tu lógica aquí es correcta)
     let elementIsPassable = true;
-    if (elementDef.drawType === 'block') {
+    if (elementDef && elementDef.drawType === 'block') {
         elementIsPassable = elementDef.passable;
-    } else {
-        elementIsPassable = true;
     }
     
     if (groundDef.passable === false || elementIsPassable === false) {
-        // --- DEBUG: Punto de fallo 3 ---
-        console.log(`[DEBUG] Bloqueo: El suelo ("${tile.g}") o elemento ("${elementDef.id}") no es transitable.`);
-        // --- FIN DEBUG ---
+        // console.log(`[DEBUG] Bloqueo: El suelo ("${tile.g}") o elemento ("${elementDef.id}") no es transitable.`);
         return false; 
     }
 
+    // --- 2. Comprobación de Altura (Escalones) ---
+    if (isNpc) return true; // ¡Importante! Los NPCs ignoran la altura
 
-    // --- Comprobación de Altura (Escalones) ---
-    if (isNpc) return true;
+    let prevX = fromX;
+    let prevZ = fromZ;
 
-    if (deps.interpolatedPlayersState && deps.myPlayerId && deps.interpolatedPlayersState[deps.myPlayerId]) {
-        const myPlayer = deps.interpolatedPlayersState[deps.myPlayerId];
-        const playerGroundY = myPlayer.y - playerSize;
-        const targetGroundY = getLogicHeightAt(worldX, worldZ);
-
-        // --- DEBUG: Punto de fallo 4 ---
-        if (Math.abs(playerGroundY - targetGroundY) > 1.1) {
-            console.log(`[DEBUG] Bloqueo de altura: Y jugador=${playerGroundY.toFixed(2)}, Y objetivo=${targetGroundY.toFixed(2)}`);
-            return false;
+    if (prevX === undefined || prevZ === undefined) {
+        if (deps.interpolatedPlayersState && deps.myPlayerId && deps.interpolatedPlayersState[deps.myPlayerId]) {
+            const myPlayer = deps.interpolatedPlayersState[deps.myPlayerId];
+            prevX = myPlayer.x;
+            prevZ = myPlayer.z;
+        } else {
+            prevX = worldX;
+            prevZ = worldZ;
         }
-        // --- FIN DEBUG ---
+    }
+
+    // Obtener la altura lógica (MÁXIMA) en el punto "desde" y "hacia"
+    // ¡Esto usa getLogicHeightAt (la función que incluye bloques) y es CORRECTO para colisión!
+    const previousGroundY = getLogicHeightAt(prevX, prevZ);
+    const targetGroundY = getLogicHeightAt(worldX, worldZ);
+
+    const MAX_STEP_HEIGHT = 0.5; // Un poco más de 1.0 para márgenes
+    if (Math.abs(previousGroundY - targetGroundY) > MAX_STEP_HEIGHT) {
+        // console.log(`[DEBUG] Bloqueo de altura: Y 'desde'=${previousGroundY.toFixed(2)}, Y 'objetivo'=${targetGroundY.toFixed(2)}`);
+        return false;
     }
     
-    // --- DEBUG: Éxito ---
-    console.log(`[DEBUG] Posición VÁLIDA: (x: ${worldX.toFixed(1)}, z: ${worldZ.toFixed(1)})`);
-    // --- FIN DEBUG ---
-
     return true; // Transitable
 }
 
 
 /**
  * Actualiza (interpola) las posiciones de TODOS los jugadores.
+ * ¡CORREGIDO! Usa getGroundHeightAt para la altura visual.
  */
 export function updatePlayerPositions() {
     if (!deps.playersState || !deps.interpolatedPlayersState) return;
@@ -176,8 +190,9 @@ export function updatePlayerPositions() {
             interp.x = lerp(interp.x, p.x, PLAYER_LERP_AMOUNT);
             interp.z = lerp(interp.z, p.z, PLAYER_LERP_AMOUNT);
 
-            // Calcular la Y del suelo OBJETIVO
-            const targetGroundY = getLogicHeightAt(interp.x, interp.z);
+            // --- ¡¡¡CORRECCIÓN CLAVE!!! ---
+            // Calcular la Y del SUELO OBJETIVO (ignora bloques)
+const targetGroundY = getLogicHeightAt(p.x, p.z);
             // Calcular la Y VISUAL (cabeza)
             const targetVisualY = targetGroundY + playerSize;
 
@@ -194,6 +209,7 @@ export function updatePlayerPositions() {
 
 /**
  * Actualiza (interpola) las posiciones de TODOS los NPCs.
+ * ¡CORREGIDO! Usa getGroundHeightAt para la altura visual.
  */
 export function updateNpcPositions() {
     if (!deps.npcStates) return;
@@ -228,7 +244,8 @@ export function updateNpcPositions() {
             if (Math.random() < NPC_RANDOM_MOVE_CHANCE) {
                 const targetX = npc.x + (Math.random() * 4 - 2); // -2 a +2
                 const targetZ = npc.z + (Math.random() * 4 - 2); // -2 a +2
-                if (isPositionPassable(targetX, targetZ, true)) {
+                
+                if (isPositionPassable(targetX, targetZ, npc.x, npc.z, true)) { 
                     npc.targetX = targetX;
                     npc.targetZ = targetZ;
                     npc.isMoving = true;
@@ -257,8 +274,11 @@ export function updateNpcPositions() {
 
 
         // --- Actualizar Y (Altura) ---
-        // Calcular la Y del suelo OBJETIVO
-        const targetGroundY = getLogicHeightAt(npc.x, npc.z);
+        // --- ¡¡¡CORRECCIÓN CLAVE!!! ---
+        // Calcular la Y del suelo OBJETIVO (ignora bloques)
+        const targetGroundY = getGroundHeightAt(npc.x, npc.z);
+        // --- FIN DE LA CORRECCIÓN ---
+
         // Calcular la Y VISUAL (cabeza)
         const targetVisualY = targetGroundY + playerSize;
         // Interpolar la Y visual

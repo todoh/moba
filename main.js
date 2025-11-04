@@ -23,7 +23,16 @@ import {
     updateCameraAngle,
     currentCameraAngle, calculateVisibleWorldBounds, isCameraRotating
 } from './camera.js';
-import { setupClickMove2_5D, setMoveActionDependencies, setCollisionChecker, setPortalHandler, setNpcHandler } from './move-action.js';
+
+// ¡MODIFICADO! Importar setPlayerPositionGetter
+import {
+    setupClickMove2_5D,
+    setMoveActionDependencies,
+    setCollisionChecker,
+    setPortalHandler,
+    setNpcHandler,
+    setPlayerPositionGetter // <-- ¡NUEVO!
+} from './move-action.js';
 import { loadGameDefinitions } from './elements.js';
 
 // 3. Importaciones de la lógica del juego (Nuestros Módulos)
@@ -67,8 +76,17 @@ let lastCameraOffsetY = 0;
 let interpolatedPlayerVisualY = 1.0; // Y visual (cabeza) suavizada de MI jugador
 
 // Exportar la Y del SUELO para que move-action.js la use al hacer clic
-export const getPlayerGroundY = () => (interpolatedPlayerVisualY - playerSize);
-
+export const getPlayerGroundY = () => {
+    // Nueva lógica:
+    if (myPlayerId && playersState[myPlayerId]) {
+        const p = playersState[myPlayerId];
+        // Usar la altura LÓGICA del estado LÓGICO
+        return logica.getLogicHeightAt(p.x, p.z);
+    }
+    
+    // Fallback: si el estado lógico no existe, usar el visual
+    return (interpolatedPlayerVisualY - playerSize);
+};
 
 // 6. Función principal (onload)
 window.onload = () => {
@@ -220,17 +238,13 @@ async function initializeFirebase() {
                     interpolatedPlayerVisualY: interpolatedPlayerVisualY,
                     mouseScreenPos: mouseScreenPos
                 };
-                 // Esta es una trampa común: necesitamos pasar el *objeto* para que las
-                 // actualizaciones se reflejen. O, mejor, pasar un objeto contenedor.
-                 // Por simplicidad, re-llamaremos a setLogicaDependencies cuando cambien.
-                 // ¡PERO! JS pasa objetos por referencia. Así que esto debería funcionar.
-                 // Vamos a re-inyectar dependencias clave por si acaso.
+                
                 logica.setLogicaDependencies({
                     get currentMapData() { return currentMapData; },
                     GAME_DEFINITIONS,
                     interpolatedPlayersState,
                     get myPlayerId() { return myPlayerId; },
-                    get playersState() { return playersState; }, // <-- ¡¡¡CORRECCIÓN 1!!!
+                    get playersState() { return playersState; },
                     npcStates,
                     get currentMapId() { return currentMapId; },
                     canvas,
@@ -257,6 +271,9 @@ async function initializeFirebase() {
                 setCollisionChecker(logica.isPositionPassable);
                 setPortalHandler(logica.getPortalDestination);
                 setNpcHandler(logica.getNpcInteraction);
+                
+                // ¡NUEVO! Dar a move-action acceso a la posición actual del jugador
+                setPlayerPositionGetter(() => interpolatedPlayersState[myPlayerId]);
 
                 infoBar.innerHTML = `Conectado. <br> <strong>Tu UserID:</strong> ${myPlayerId.substring(0, 6)}<br><strong>Instrucciones:</strong> Toca para moverte.`;
 
@@ -269,7 +286,8 @@ async function initializeFirebase() {
                         if (interpolatedPlayersState[myPlayerId]) {
                             interpolatedPlayersState[myPlayerId].x = playerData.x;
                             interpolatedPlayersState[myPlayerId].z = playerData.z;
-                            interpolatedPlayerVisualY = playerSize + logica.getLogicHeightAt(playerData.x, playerData.z);
+                            // --- ¡¡¡CORRECCIÓN!!! ---
+                            interpolatedPlayerVisualY = playerSize + logica.getGroundHeightAt(playerData.x, playerData.z);
                         }
                         loadMap(playerData.currentMap);
                     }
@@ -318,7 +336,7 @@ function loadMap(mapId) {
         GAME_DEFINITIONS,
         interpolatedPlayersState,
         get myPlayerId() { return myPlayerId; },
-        get playersState() { return playersState; }, // <-- ¡¡¡CORRECCIÓN 2!!!
+        get playersState() { return playersState; }, 
         npcStates,    // Nueva referencia
         get currentMapId() { return currentMapId; }, // Nuevo valor
         canvas,
@@ -374,19 +392,15 @@ function loadMap(mapId) {
                     if (tile && typeof tile.e === 'object' && tile.e.id) {
                         const elementDef = GAME_DEFINITIONS.elementTypes[tile.e.id];
                         
-                        // --- ¡¡¡CORRECCIÓN DE LÓGICA DE NPC!!! ---
-                        // Antes: if (elementDef && elementDef.drawType === 'sprite' && tile.e.movement)
-                        // Esto era demasiado estricto. Si un NPC no tenía 'movement', no aparecía.
-                        // Ahora, cualquier 'sprite' es tratado como un NPC (se mueva o no).
                         if (elementDef && elementDef.drawType === 'sprite') {
-                        // --- FIN DE LA CORRECCIÓN ---
                             
                             const npcKey = `npc_${z}_${x}`;
                             npcStates[npcKey] = {
                                 ...tile.e,
                                 x: x + 0.5,
                                 z: z + 0.5,
-                                y: playerSize + logica.getLogicHeightAt(x + 0.5, z + 0.5),
+                                // --- ¡¡¡CORRECCIÓN!!! ---
+                                y: playerSize + logica.getGroundHeightAt(x + 0.5, z + 0.5),
                                 targetX: x + 0.5,
                                 targetZ: z + 0.5,
                                 isMoving: false,
@@ -409,7 +423,8 @@ function loadMap(mapId) {
             }
             currentMapData.initialSpawn = spawnPos;
 
-            interpolatedPlayerVisualY = playerSize + logica.getLogicHeightAt(spawnPos.x, spawnPos.z);
+            // --- ¡¡¡CORRECCIÓN!!! ---
+            interpolatedPlayerVisualY = playerSize + logica.getGroundHeightAt(spawnPos.x, spawnPos.z);
 
             onValue(myPlayerRef, (playerSnap) => {
                 const playerData = playerSnap.val();
@@ -425,7 +440,8 @@ function loadMap(mapId) {
                     if (interpolatedPlayersState[myPlayerId]) {
                         interpolatedPlayersState[myPlayerId].x = playerData.x;
                         interpolatedPlayersState[myPlayerId].z = playerData.z;
-                        interpolatedPlayersState[myPlayerId].y = playerSize + logica.getLogicHeightAt(playerData.x, playerData.z);
+                        // --- ¡¡¡CORRECCIÓN!!! ---
+                        interpolatedPlayersState[myPlayerId].y = playerSize + logica.getGroundHeightAt(playerData.x, playerData.z);
                         if (myPlayerId === interpolatedPlayersState[myPlayerId].id) {
                             interpolatedPlayerVisualY = interpolatedPlayersState[myPlayerId].y;
                         }
@@ -451,7 +467,8 @@ function loadMap(mapId) {
             if (!interpolatedPlayersState[id]) {
                 interpolatedPlayersState[id] = {
                     ...playersState[id],
-                    y: playerSize + logica.getLogicHeightAt(playersState[id].x, playersState[id].z)
+                    // --- ¡¡¡CORRECCIÓN!!! ---
+                    y: playerSize + logica.getGroundHeightAt(playersState[id].x, playersState[id].z)
                 };
             }
         }
@@ -512,6 +529,7 @@ function gameLoop() {
         cameraOffset,
         lastCameraOffsetX,
         lastCameraOffsetY,
-        logica.getLogicHeightAt // Pasar la función como dependencia
+        logica.getLogicHeightAt // <-- ¡ESTA ES LA LÍNEA FINAL CORRECTA!
     );
 }
+
