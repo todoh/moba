@@ -1,4 +1,5 @@
 /* --- ESTILOS GENERALES (STYLES.CSS) --- */
+/* (Restaurado de tu proyecto original y actualizado) */
 body {
     margin: 0;
     padding: 0;
@@ -35,43 +36,8 @@ body {
     display: block;
 }
 
-/* --- ESTILOS PARA CONTROLES DE ZOOM --- */
-#zoom-controls {
-    position: absolute;
-    bottom: 20px;
-    left: 20px;
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    gap: 10px; /* Espacio entre botones */
-}
-
-#zoom-controls button {
-    width: 50px;
-    height: 50px;
-    font-size: 28px;
-    font-weight: bold;
-    color: white;
-    background-color: rgba(0, 0, 0, 0.6);
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-radius: 50%; /* Botones redondos */
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    line-height: 1;
-    /* Evita el destello azul al tocar en móviles */
-    -webkit-tap-highlight-color: transparent; 
-}
-
-#zoom-controls button:active {
-    background-color: rgba(255, 255, 255, 0.3);
-}
-
-
 /* --- ESTILOS PARA MODAL DE NPC --- */
-/* Contenedor que oculta (display: none) */
+/* (Estilos del modal sin cambios) */
 .npc-modal-hidden {
     display: none;
     position: absolute;
@@ -84,8 +50,6 @@ body {
     justify-content: center;
     align-items: center;
 }
-
-/* Contenedor que muestra (display: flex) */
 .npc-modal-visible {
     display: flex;
     position: absolute;
@@ -98,8 +62,6 @@ body {
     justify-content: center;
     align-items: center;
 }
-
-/* El contenido de la ventana modal */
 #npc-modal-content {
     background-color: #2d3748; /* bg-gray-800 */
     color: white;
@@ -111,14 +73,12 @@ body {
     width: 90%;
     text-align: center;
 }
-
 #npc-modal-text {
     font-size: 1.1rem;
     margin-top: 0;
     margin-bottom: 20px;
     line-height: 1.5;
 }
-
 #npc-modal-close {
     background-color: #3b82f6; /* bg-blue-600 */
     color: white;
@@ -130,29 +90,24 @@ body {
     cursor: pointer;
     transition: background-color 0.2s;
 }
-
 #npc-modal-close:hover {
     background-color: #2563eb; /* bg-blue-700 */
 }
 
- 
-#zoom-controls button:active {
-    background-color: rgba(255, 255, 255, 0.3);
-}
-
-
-/* --- ¡NUEVO! ESTILOS PARA CONTROLES DE ROTACIÓN --- */
-#rotate-controls {
+/* --- ¡NUEVO! ESTILOS PARA CONTROLES DE CÁMARA --- */
+#camera-controls {
     position: absolute;
     bottom: 20px;
-    right: 20px; /* En el lado opuesto */
+    right: 20px;
     z-index: 10;
     display: flex;
-    flex-direction: column;
     gap: 10px; /* Espacio entre botones */
+    background-color: rgba(0, 0, 0, 0.3);
+    padding: 10px;
+    border-radius: 12px;
 }
 
-#rotate-controls button {
+#camera-controls button {
     width: 50px;
     height: 50px;
     font-size: 28px;
@@ -171,9 +126,6 @@ body {
     -webkit-tap-highlight-color: transparent; 
 }
 
-#rotate-controls button:active {
+#camera-controls button:active {
     background-color: rgba(255, 255, 255, 0.3);
 }
-
-
- 

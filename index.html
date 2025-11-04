@@ -2,42 +2,52 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <!-- Meta tag esencial para móviles: deshabilita el zoom por gestos y ajusta al ancho del dispositivo -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>PLANELITE</title>
-    <!-- Enlazar la hoja de estilos externa -->
+    <title>PLANELITE 3D</title>
     <link rel="stylesheet" href="styles.css">
+
+    <!-- Importar Three.js y sus módulos -->
+    <script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+      }
+    }
+    </script>
 </head>
 <body>
 
-    <!-- Barra de información (sin cambios) -->
+    <!-- Barra de información -->
     <div id="info-bar">
         Conectando a Firebase...
         <br>
         <strong>Instrucciones:</strong> ¡Toca el mapa para moverte!
     </div>
 
-    <!-- Canvas (sin cambios) -->
+    <!-- Canvas -->
     <canvas id="game-canvas"></canvas>
-
-    <!-- Controles de Zoom (sin cambios) -->
-    <div id="zoom-controls">
+    
+    <!-- ¡NUEVO! Controles de Cámara Isométrica -->
+    <div id="camera-controls">
+        <button id="rotate-left">⟲</button>
         <button id="zoom-in">+</button>
         <button id="zoom-out">-</button>
-    </div>
- <div id="rotate-controls">
-        <button id="rotate-left">⟲</button>
         <button id="rotate-right">⟳</button>
     </div>
 
-<div id="npc-modal-container" class="npc-modal-hidden">
+    <!-- Modal de NPC -->
+    <div id="npc-modal-container" class="npc-modal-hidden">
         <div id="npc-modal-content">
             <p id="npc-modal-text">Texto del NPC irá aquí...</p>
             <button id="npc-modal-close">Cerrar</button>
         </div>
     </div>
     
+    <!-- Cargador del script principal -->
     <script type="module" src="main.js"></script>
 
 </body>
 </html>
+
