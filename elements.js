@@ -2,16 +2,13 @@
 // ### DEFINICIONES de ELEMENTOS (ELEMENTS.JS) ###
 // ==================================================
 // ¡Refactorizado! Este archivo ahora SÓLO carga datos, no dibuja.
+// ¡MODIFICADO! para cargar la nueva estructura de (ground, block, portal, entity)
 
 import { ref, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
-// ¡ELIMINADO! El caché de texturas 2D y las funciones de dibujo.
-// main.js se encargará de cargar texturas de Three.js.
-
-
 /**
  * Carga TODAS las definiciones de juego (terrenos y elementos) desde Firebase.
- * ¡MODIFICADO! Ya no asigna funciones de dibujo.
+ * ¡MODIFICADO! Carga la nueva estructura de 4 tipos.
  */
 export async function loadGameDefinitions(db) {
     console.log("Cargando definiciones del juego desde Firebase...");
@@ -27,14 +24,29 @@ export async function loadGameDefinitions(db) {
     const data = snapshot.val();
     const groundTypes = data.groundTypes || {};
     
-    // Fusionar todos los tipos de "elementos" en uno solo
-    const elementTypes = data.elementTypes || {};
-    const npcTypes = data.npcTypes || {};
-    const portalTypes = data.portalTypes || {};
+    // --- ¡CORRECCIÓN! LÓGICA DE FUSIÓN COMPLETA ---
+    // Cargamos los 3 tipos de "elementos"
     const blockTypes = data.blockTypes || {}; 
+    const portalTypes = data.portalTypes || {};
+    
+    // --- ¡AQUÍ ESTÁ LA CORRECCIÓN! ---
+    // Cargar las definiciones del editor NUEVO
+    const entityTypes = data.entityTypes || {}; 
+    // Cargar las definiciones del editor ANTIGUO
+    const oldElementTypes = data.elementTypes || {};
+    const oldNpcTypes = data.npcTypes || {};
 
-    const allElementTypes = { ...elementTypes, ...npcTypes, ...portalTypes, ...blockTypes }; 
-
+    // Fusionar todos en un solo objeto 'elementTypes'
+    // El orden importa: las nuevas 'entityTypes' deben ir al final
+    // para sobrescribir las antiguas si tienen el mismo ID.
+    const allElementTypes = { 
+        ...blockTypes, 
+        ...portalTypes, 
+        ...oldElementTypes, // Cargar antiguas
+        ...oldNpcTypes,      // Cargar antiguas
+        ...entityTypes       // Cargar nuevas (sobrescribe antiguas)
+    }; 
+    // ----------------------------------
 
     // --- Procesar Ground Types ---
     if (!groundTypes['void']) {
@@ -47,26 +59,33 @@ export async function loadGameDefinitions(db) {
         const def = allElementTypes[key];
 
         // --- Asignar el TIPO LÓGICO ---
-        // Esto sigue siendo útil para que la lógica sepa qué es qué
-        if (key === 'none') {
-            def.drawType = 'none';
-        } else if (portalTypes[key]) {
-            def.drawType = 'portal';
-        } else if (blockTypes[key]) { 
-             def.drawType = 'block';
-        } else if (npcTypes[key]) { // Diferenciar NPCs
-            def.drawType = 'npc';
-        } else {
-            def.drawType = 'sprite'; // (Elementos estáticos como árboles, rocas)
-        }
-        
-        // --- ¡ELIMINADO! ---
-        // Toda la lógica de def.img = getImage(...)
-        // Toda la lógica de def.draw = DRAW_FUNCTIONS[...]
+        // (Esto ya viene en la definición desde e-entidades.js, 
+        // pero lo re-aseguramos por si faltan datos antiguos)
+        if (!def.drawType) {
+            if (blockTypes[key]) { 
+                 def.drawType = 'block';
+            } else if (portalTypes[key]) {
+                def.drawType = 'portal';
+            } else if (entityTypes[key] || oldElementTypes[key] || oldNpcTypes[key]) {
+                 // Si es cualquier tipo de entidad/elemento/npc y tiene imagen, es un sprite
+                 def.drawType = (def.imgSrc) ? 'sprite' : 'none'; 
+            }
+        if (!def.renderStyle) {
+            if (def.drawType === 'sprite') {
+                // Por defecto, los sprites antiguos (árboles, etc.) serán 'cross'
+                def.renderStyle = 'cross';
+            }
+        }}
     }
     
+    // Asegurar que 'none' (que ahora es una 'entity') exista
     if (!allElementTypes['none']) {
-        allElementTypes['none'] = { id: 'none', passable: true, drawType: 'none' };
+        allElementTypes['none'] = { 
+            id: 'none', 
+            passable: true, 
+            drawType: 'none', 
+            interactions: [] 
+        };
     }
 
     console.log("Definiciones de datos cargadas:", { groundTypes, elementTypes: allElementTypes });
@@ -74,14 +93,3 @@ export async function loadGameDefinitions(db) {
     // Devuelve los datos puros. main.js decidirá cómo renderizarlos.
     return { groundTypes, elementTypes: allElementTypes };
 }
-
-// ¡ELIMINADO!
-// drawGroundTile
-// shadeColor
-// drawIsometricCube
-// drawTexturePolygon
-// drawSprite
-// drawPortal
-// drawBlock
-// drawNone
-// const DRAW_FUNCTIONS

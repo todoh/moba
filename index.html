@@ -25,7 +25,9 @@
     </div>
 
     <canvas id="game-canvas"></canvas>
-    
+    <div id="menu-controls">
+        <button id="menu-toggle-btn">☰</button>
+    </div>
     <div id="camera-controls">
         <button id="rotate-left">⟲</button>
         <button id="zoom-in">+</button>
@@ -36,6 +38,15 @@
     <div id="speech-bubble" class="speech-bubble-hidden">
         <p id="speech-bubble-text">Texto del NPC irá aquí...</p>
         <div class="speech-bubble-tail"></div>
+    </div>
+    
+    <!-- ¡NUEVO! Modal del Menú de Interacción -->
+    <div id="interaction-menu-modal" class="interaction-menu-hidden">
+        <div id="interaction-menu-title">Acciones</div>
+        <div id="interaction-menu-buttons">
+            <!-- Los botones se generan dinámicamente -->
+        </div>
+        <button id="interaction-menu-close-btn">Cancelar</button>
     </div>
     
     <script type="module" src="main.js"></script>

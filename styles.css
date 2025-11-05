@@ -136,3 +136,112 @@ body {
 #camera-controls button:active {
     background-color: rgba(255, 255, 255, 0.3);
 }
+
+
+#menu-controls {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    z-index: 10;
+}
+
+#menu-toggle-btn {
+    width: 50px;
+    height: 50px;
+    font-size: 28px;
+    font-weight: bold;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%; /* Botón redondo */
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+    -webkit-tap-highlight-color: transparent; 
+}
+
+#menu-toggle-btn:active {
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* --- ¡NUEVO! ESTILOS PARA MENÚ DE INTERACCIÓN --- */
+#interaction-menu-modal {
+    position: absolute;
+    z-index: 19; /* Debajo del bocadillo pero encima de todo lo demás */
+    background-color: #2d3748; /* bg-gray-800 */
+    color: white;
+    padding: 1rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    width: 200px;
+    
+    /* Posicionamiento (igual que el bocadillo) */
+    transform: translate(-50%, calc(-100% - 15px));
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem; /* Espacio entre título, botones y cancelar */
+}
+
+.interaction-menu-hidden {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% - 15px)) scale(0.8);
+    pointer-events: none;
+}
+
+.interaction-menu-visible {
+    opacity: 1;
+    transform: translate(-50%, calc(-100% - 15px)) scale(1);
+    pointer-events: all;
+}
+
+#interaction-menu-title {
+    font-size: 1.125rem; /* text-lg */
+    font-weight: 600;
+    color: #93c5fd; /* blue-300 */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 0.5rem;
+}
+
+#interaction-menu-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem; /* Espacio entre botones */
+}
+
+#interaction-menu-buttons button {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background-color: #374151; /* gray-700 */
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: left;
+    font-size: 1rem;
+    transition: background-color 0.2s;
+}
+
+#interaction-menu-buttons button:hover {
+    background-color: #4b5563; /* gray-600 */
+}
+
+#interaction-menu-close-btn {
+    padding: 0.5rem;
+    background-color: #991b1b; /* red-800 */
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: background-color 0.2s;
+}
+
+#interaction-menu-close-btn:hover {
+    background-color: #b91c1c; /* red-700 */
+}
