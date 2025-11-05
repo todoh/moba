@@ -968,8 +968,11 @@ function loadMap(mapId) {
 
     const playersQuery = query(ref(db, 'moba-demo-players-3d'), orderByChild('currentMap'), equalTo(mapId));
     playersListener = onValue(playersQuery, (snapshot) => {
+        
+        // Asignar el nuevo estado (puede ser nulo, y eso está bien temporalmente)
         playersState = snapshot.val() || {};
         
+        // Bucle de SPANW (sin cambios)
         for (const id in playersState) {
             if (!interpolatedPlayersState[id]) {
                 const groundHeight = logica.getGroundHeightAt(playersState[id].x, playersState[id].z);
@@ -982,8 +985,27 @@ function loadMap(mapId) {
                 }
             }
         }
+
+        // Bucle de DESPAWN (¡CORREGIDO!)
         for (const id in playerMeshes) {
             if (!playersState[id]) {
+                
+                // --- INICIO DE LA CORRECCIÓN ---
+                // Si el snapshot está vacío (causando que playersState[id] sea falso)
+                // Y el avatar que estamos a punto de borrar es el NUESTRO,
+                // ¡NO LO BORRES!
+                if (id === myPlayerId) {
+                    // En lugar de borrarme, me "re-inyecto" en el estado local
+                    // para que la lógica de movimiento (handleMoveClick) siga funcionando.
+                    if (interpolatedPlayersState[id]) {
+                         playersState[id] = interpolatedPlayersState[id];
+                    }
+                    // Sáltate el borrado
+                    continue; 
+                }
+                // --- FIN DE LA CORRECCIÓN ---
+
+                // Si no soy yo, es seguro borrar al jugador que se desconectó.
                 scene.remove(playerMeshes[id]);
                 playerMeshes[id].geometry.dispose();
                 playerMeshes[id].material.dispose();
@@ -992,7 +1014,6 @@ function loadMap(mapId) {
             }
         }
     });
-
     if (!isGameLoopRunning) {
         isGameLoopRunning = true;
         gameLoop();
