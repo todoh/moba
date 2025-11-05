@@ -56,7 +56,9 @@ let npcStates = {};
 // 5. Variables de UI y Canvas
 let canvas;
 let infoBar;
-let npcModalContainer, npcModalText, npcModalClose;
+// ¡MODIFICADO! Referencias al nuevo bocadillo
+let speechBubble, speechBubbleText;
+let activeNpcKey = null; // ¡NUEVO! Rastrea quién está hablando
 
 // 6. ¡NUEVO! Variables de Three.js
 let scene, camera, renderer, raycaster, mouse;
@@ -84,10 +86,12 @@ let cameraZoom = CAMERA_DEFAULT_ZOOM; // ¡NUEVO! Controla el zoom ortográfico
 window.onload = () => {
     // Inicializar UI
     infoBar = document.getElementById('info-bar');
-    npcModalContainer = document.getElementById('npc-modal-container');
-    npcModalText = document.getElementById('npc-modal-text');
-    npcModalClose = document.getElementById('npc-modal-close');
-    npcModalClose.addEventListener('click', hideNpcModal); 
+    
+    // ¡MODIFICADO! Obtener referencias del bocadillo
+    speechBubble = document.getElementById('speech-bubble');
+    speechBubbleText = document.getElementById('speech-bubble-text');
+    // ¡ELIMINADO! El listener del botón de cerrar
+    // npcModalClose.addEventListener('click', hideNpcModal); 
 
     // Inicializar Canvas
     canvas = document.getElementById('game-canvas');
@@ -191,8 +195,13 @@ function loadTexture(src) {
 
 // 9. Lógica de UI (Movida desde logica.js y move-action.js)
 
-function showNpcModal(npc) {
-    // ... (código sin cambios)
+// ¡MODIFICADO! showNpcModal ahora activa el bocadillo
+function showNpcModal(npc, npcKey) {
+    // Si ya estamos hablando, no hacer nada (o cerrar y reabrir)
+    if (activeNpcKey) {
+        hideNpcModal();
+    }
+
     const elementDef = GAME_DEFINITIONS.elementTypes[npc.id];
     let text = "Hola.";
     
@@ -202,17 +211,21 @@ function showNpcModal(npc) {
         text = elementDef.dialogText;
     }
 
-    if (npcModalText && npcModalContainer) {
-        npcModalText.textContent = text;
-        npcModalContainer.className = 'npc-modal-visible';
+    if (speechBubbleText && speechBubble) {
+        speechBubbleText.textContent = text;
+        speechBubble.className = 'speech-bubble-visible';
+        activeNpcKey = npcKey; // ¡Importante!
     }
 }
 
+// ¡MODIFICADO! hideNpcModal ahora oculta el bocadillo
 function hideNpcModal() {
-    if (npcModalContainer) {
-        npcModalContainer.className = 'npc-modal-hidden';
+    if (speechBubble) {
+        speechBubble.className = 'speech-bubble-hidden';
     }
+    activeNpcKey = null; // ¡Importante!
 }
+
 
 function showBlockedClick(screenX, screenY) {
     // ... (código sin cambios)
@@ -243,6 +256,12 @@ function showBlockedClick(screenX, screenY) {
 // 10. Lógica de Input 3D (Raycasting)
 
 function onCanvasClick(event) {
+    // ¡NUEVO! Si hay un bocadillo activo, el clic solo lo cierra.
+    if (activeNpcKey) {
+        hideNpcModal();
+        return; // Consumir el clic para cerrar el bocadillo
+    }
+    
     // ... (código sin cambios)
     if (!myPlayerId || !db || !canvas || !logica.isPositionPassable) return;
     if (event.target !== canvas) return;
@@ -262,13 +281,15 @@ function onCanvasClick(event) {
         const npcKey = targetObject.userData.key;
         const interactionHappened = logica.getNpcInteraction(npcStates[npcKey]);
         if (interactionHappened) {
-            showNpcModal(npcStates[npcKey]); 
+            // ¡MODIFICADO! Pasar el npcKey para rastrearlo
+            showNpcModal(npcStates[npcKey], npcKey); 
             return; 
         }
     }
     
     if (targetObject.userData.type === 'portal') {
-         const portalDest = logica.getPortalDestination(targetObject.userData.definition);
+         // ¡MODIFICADO! Pasar la *instancia* del portal, no la definición
+         const portalDest = logica.getPortalDestination(targetObject.userData.instance);
          if (portalDest) {
             const localMapId = currentMapId;
             if (portalDest.mapId && portalDest.mapId !== localMapId) {
@@ -403,6 +424,7 @@ async function initializeFirebase() {
 
                 GAME_DEFINITIONS = await loadGameDefinitions(db);
                 
+                // ¡MODIFICADO! Eliminadas las dependencias del modal
                 logica.setLogicaDependencies({
                     get currentMapData() { return currentMapData; },
                     GAME_DEFINITIONS,
@@ -412,8 +434,6 @@ async function initializeFirebase() {
                     npcStates,
                     get currentMapId() { return currentMapId; },
                     canvas,
-                    npcModalContainer,
-                    npcModalText,
                 });
 
                 setMoveActionDependencies(myPlayerId, db, () => currentMapId);
@@ -573,8 +593,8 @@ function buildWorld(tileGrid) {
                 const geometry1 = new THREE.PlaneGeometry(planeWidth, planeHeight);
                 const planeMesh1 = new THREE.Mesh(geometry1, material);
                 planeMesh1.castShadow = true;
-                // Asignar userData al mesh individual para el raycasting
-                planeMesh1.userData = { type: elementDef.drawType, x, z, key: elementKey, definition: elementDef };
+                // ¡MODIFICADO! Añadir la *instancia* del tile (tile.e)
+                planeMesh1.userData = { type: elementDef.drawType, x, z, key: elementKey, definition: elementDef, instance: tile.e };
                 crossGroup.add(planeMesh1);
                 
                 // Plano 2 (X-axis, rotado 90 grados)
@@ -582,8 +602,8 @@ function buildWorld(tileGrid) {
                 const planeMesh2 = new THREE.Mesh(geometry2, material);
                 planeMesh2.rotation.y = Math.PI / 2; // Girar 90 grados
                 planeMesh2.castShadow = true;
-                // Asignar userData al mesh individual para el raycasting
-                planeMesh2.userData = { type: elementDef.drawType, x, z, key: elementKey, definition: elementDef };
+                // ¡MODIFICADO! Añadir la *instancia* del tile (tile.e)
+                planeMesh2.userData = { type: elementDef.drawType, x, z, key: elementKey, definition: elementDef, instance: tile.e };
                 crossGroup.add(planeMesh2);
 
                 scene.add(crossGroup);
@@ -599,7 +619,8 @@ function buildWorld(tileGrid) {
                 const portalMesh = new THREE.Mesh(portalGeo, portalMat);
                 portalMesh.position.set(x + 0.5, height + 0.1, z + 0.5);
                 
-                portalMesh.userData = { type: 'portal', x, z, key: elementKey, definition: elementDef };
+                // ¡MODIFICADO! Añadir la *instancia* del tile (tile.e)
+                portalMesh.userData = { type: 'portal', x, z, key: elementKey, definition: elementDef, instance: tile.e };
                 interactableObjects.push(portalMesh);
                 
                 scene.add(portalMesh);
@@ -624,6 +645,7 @@ function loadMap(mapId) {
     npcStates = {};
     currentMapId = mapId;
 
+    // ¡MODIFICADO! Eliminadas las dependencias del modal
     logica.setLogicaDependencies({
         get currentMapData() { return currentMapData; },
         GAME_DEFINITIONS,
@@ -632,7 +654,7 @@ function loadMap(mapId) {
         get playersState() { return playersState; },
         npcStates,
         get currentMapId() { return currentMapId; },
-        canvas, npcModalContainer, npcModalText,
+        canvas,
     });
 
     mapRef = ref(db, `moba-demo-maps/${mapId}`);
@@ -848,7 +870,40 @@ function gameLoop() {
     */
     // Los 'spriteMeshes' que son grupos (en cruz) no necesitan rotar.
 
-    // 3. ¡NUEVO! Actualizar Cámara Isométrica
+    // 3. ¡NUEVO! Actualizar Bocadillo de Diálogo
+    if (activeNpcKey) {
+        const npcMesh = npcMeshes[activeNpcKey];
+        if (npcMesh) {
+            // Calcular la posición superior del sprite del NPC
+            const planeHeight = npcMesh.userData.planeHeight || playerSize;
+            const topY = npcMesh.position.y + (planeHeight / 2);
+            // +0.2 de offset para que flote un poco por encima
+            const worldPos = new THREE.Vector3(npcMesh.position.x, topY + 0.2, npcMesh.position.z); 
+            
+            // Proyectar de 3D a 2D
+            const screenPos = worldPos.clone().project(camera);
+            const screenX = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+            const screenY = (screenPos.y * -0.5 + 0.5) * window.innerHeight;
+            
+            // Actualizar la posición del bocadillo en la pantalla
+            speechBubble.style.left = `${screenX}px`;
+            speechBubble.style.top = `${screenY}px`;
+            
+            // Ocultar si está fuera de la pantalla
+            if (screenPos.x < -1.1 || screenPos.x > 1.1 || screenPos.y < -1.1 || screenPos.y > 1.1) {
+                 speechBubble.className = 'speech-bubble-hidden';
+            } else if (speechBubble.className !== 'speech-bubble-visible') {
+                 // Re-mostrar si vuelve a la pantalla
+                 speechBubble.className = 'speech-bubble-visible';
+            }
+            
+        } else {
+            // El NPC desapareció (ej. cambió de mapa), ocultar bocadillo
+            hideNpcModal();
+        }
+    }
+
+    // 4. ¡NUEVO! Actualizar Cámara Isométrica
     if (playerMeshes[myPlayerId]) {
         // Mover el punto de mira de la cámara
         cameraTarget.lerp(playerMeshes[myPlayerId].position, 0.1);
@@ -866,7 +921,6 @@ function gameLoop() {
     camera.position.set(newCamX, cameraTarget.y + cameraHeight, newCamZ); 
     camera.lookAt(cameraTarget); // Apuntar siempre al jugador
 
-    // 4. Renderizar
+    // 5. Renderizar
     renderer.render(scene, camera);
 }
-

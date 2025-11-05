@@ -270,17 +270,18 @@ export function getNpcInteraction(npc) {
 
 /**
  * Comprueba si un clic/toque resultó en un portal.
- * ¡MODIFICADO! Ahora recibe la 'definition' directamente.
+ * ¡MODIFICADO! Ahora recibe la *instancia* del portal.
  * @returns {object | null} - El destino del portal, o null.
  */
-export function getPortalDestination(elementDef) {
+export function getPortalDestination(portalInstance) {
     // La comprobación de 'portal' ya se hizo en el raycaster de main.js
-    if (elementDef && elementDef.drawType === 'portal' && typeof tile.e === 'object' && tile.e.destMap) {
-        console.log("Portal encontrado:", tile.e);
+    // ¡CORREGIDO! Comprobar la instancia, no la variable 'tile'
+    if (portalInstance && portalInstance.destMap) {
+        console.log("Portal encontrado:", portalInstance);
         return {
-            mapId: tile.e.destMap,
-            x: tile.e.destX,
-            z: tile.e.destZ
+            mapId: portalInstance.destMap,
+            x: portalInstance.destX,
+            z: portalInstance.destZ
         };
     }
     return null;
@@ -289,3 +290,4 @@ export function getPortalDestination(elementDef) {
 // --- ¡ELIMINADO! ---
 // updateHoveredState() ha sido eliminado.
 // El Raycasting en main.js (onCanvasMove) se encarga de esto.
+

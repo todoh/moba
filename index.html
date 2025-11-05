@@ -6,7 +6,6 @@
     <title>PLANELITE 3D</title>
     <link rel="stylesheet" href="styles.css">
 
-    <!-- Importar Three.js y sus módulos -->
     <script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
     <script type="importmap">
     {
@@ -19,17 +18,14 @@
 </head>
 <body>
 
-    <!-- Barra de información -->
     <div id="info-bar">
         Conectando a Firebase...
         <br>
         <strong>Instrucciones:</strong> ¡Toca el mapa para moverte!
     </div>
 
-    <!-- Canvas -->
     <canvas id="game-canvas"></canvas>
     
-    <!-- ¡NUEVO! Controles de Cámara Isométrica -->
     <div id="camera-controls">
         <button id="rotate-left">⟲</button>
         <button id="zoom-in">+</button>
@@ -37,17 +33,12 @@
         <button id="rotate-right">⟳</button>
     </div>
 
-    <!-- Modal de NPC -->
-    <div id="npc-modal-container" class="npc-modal-hidden">
-        <div id="npc-modal-content">
-            <p id="npc-modal-text">Texto del NPC irá aquí...</p>
-            <button id="npc-modal-close">Cerrar</button>
-        </div>
+    <div id="speech-bubble" class="speech-bubble-hidden">
+        <p id="speech-bubble-text">Texto del NPC irá aquí...</p>
+        <div class="speech-bubble-tail"></div>
     </div>
     
-    <!-- Cargador del script principal -->
     <script type="module" src="main.js"></script>
 
 </body>
 </html>
-

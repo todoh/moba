@@ -35,12 +35,12 @@ export const CAMERA_ROTATE_STEP = Math.PI / 4; // ¡NUEVO! 45 grados (8 pasos po
 
 // ¡MODIFICADO! Estos valores ahora controlan el frustum ortográfico
 // Un número PEQUEÑO es MÁS ZOOM. Un número GRANDE es MENOS ZOOM.
-export const CAMERA_MIN_ZOOM = 5;  // Zoom máximo (vista más cercana)
-export const CAMERA_MAX_ZOOM = 40; // Zoom mínimo (vista más lejana)
+export const CAMERA_MIN_ZOOM = 3;  // Zoom máximo (vista más cercana)
+export const CAMERA_MAX_ZOOM = 10; // Zoom mínimo (vista más lejana)
 export const CAMERA_ZOOM_STEP = 2; // Cantidad a cambiar en cada clic
 
 // ¡NUEVO! Valores por defecto para el ángulo
-export const CAMERA_DEFAULT_ZOOM = 20;     // Zoom inicial
+export const CAMERA_DEFAULT_ZOOM = 8;     // Zoom inicial
 export const CAMERA_DEFAULT_HEIGHT = 20;   // Altura Y fija sobre el jugador
 export const CAMERA_DEFAULT_DISTANCE = 30; // Distancia X/Z fija del jugador (MÁS GRANDE que la altura)
 
