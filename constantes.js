@@ -20,8 +20,12 @@ export const firebaseConfig = {
 const BUCKET_ID = "enraya-51670.firebasestorage.app";
 export const STORAGE_URL_BASE = `https://firebasestorage.googleapis.com/v0/b/${BUCKET_ID}/o/`;
 
+// --- ¡NUEVO! Definición de Carpetas ---
+const IMAGE_FOLDER = 'recursos';
+const MODEL_FOLDER = 'modelos'; // <-- CONSTANTE AÑADIDA
+
 /**
- * ¡NUEVO!
+ * ¡MODIFICADO!
  * Convierte un nombre de archivo (ej: 'cesped.jpg') en una URL
  * completa de Firebase Storage, asumiendo que está en la carpeta 'recursos'.
  * @param {string} fileName - El nombre del archivo (ej: 'cesped.jpg', 'tree_01.png')
@@ -31,12 +35,33 @@ export function getFirebaseStorageUrl(fileName) {
     if (!fileName) {
         return null;
     }
-    // Construir la ruta (ej: recursos/cesped.jpg) y codificarla para URL (recursos%2Fcesped.jpg)
-    const encodedPath = encodeURIComponent(`recursos/${fileName}`);
+    // ¡MODIFICADO! para usar la constante
+    const encodedPath = encodeURIComponent(`${IMAGE_FOLDER}/${fileName}`);
     
     // Devolver la URL completa
     return `${STORAGE_URL_BASE}${encodedPath}?alt=media`;
 }
+
+/**
+ * ¡¡¡FUNCIÓN AÑADIDA!!!
+ * Construye la URL pública de un archivo de MODELO 3D en Firebase Storage.
+ * @param {string} fileName - El nombre del archivo (ej: "tank.glb")
+ * @returns {string|null} - La URL completa para acceder al archivo, o null si no hay nombre.
+ */
+export function getFirebaseModelUrl(fileName) {
+    if (!fileName) {
+        return null;
+    }
+    
+    // Codifica el nombre de la carpeta y el archivo para la URL
+    // 'modelos/tank.glb' se convierte en 'modelos%2Ftank.glb'
+    const encodedPath = encodeURIComponent(`${MODEL_FOLDER}/${fileName}`);
+    
+    // Devolver la URL pública completa
+    return `${STORAGE_URL_BASE}${encodedPath}?alt=media`;
+}
+
+
 // --- Constantes del Jugador ---
 export const MOVEMENT_SPEED = 0.05; // (Se mantiene, usado por logica.js)
 export const playerSize = 1.0; // Altura del jugador (para la lógica de 'y')
@@ -65,5 +90,3 @@ export const CAMERA_VERTICAL_OFFSET = 1.0;
 export const CAMERA_DEFAULT_ZOOM = 6;     // Zoom inicial
 export const CAMERA_DEFAULT_HEIGHT = 20;   // Altura Y fija sobre el jugador
 export const CAMERA_DEFAULT_DISTANCE = 30; // Distancia X/Z fija del jugador (MÁS GRANDE que la altura)
-
-

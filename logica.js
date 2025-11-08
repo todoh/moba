@@ -2,7 +2,6 @@
 // ### LÓGICA DE JUEGO (logica.js) ###
 // ==================================================
 // Contiene la lógica de movimiento, colisiones, IA, e interacciones.
-// ¡Este archivo casi no cambia!
 
 import {
     MOVEMENT_SPEED, playerSize, PLAYER_LERP_AMOUNT,
@@ -122,7 +121,7 @@ export function isPositionPassable(worldX, worldZ, fromX, fromZ, isNpc = false) 
     if (!groundDef) return false; // Definición no encontrada
 
     let elementIsPassable = true;
-    if (elementDef && (elementDef.drawType === 'block' || elementDef.drawType === 'sprite')) {
+    if (elementDef && (elementDef.drawType === 'block' || elementDef.drawType === 'sprite' || elementDef.renderStyle === 'gltf')) {
         elementIsPassable = elementDef.passable;
     }
     
@@ -161,7 +160,6 @@ export function isPositionPassable(worldX, worldZ, fromX, fromZ, isNpc = false) 
 
 /**
  * Actualiza (interpola) las posiciones de TODOS los jugadores.
- * (Sin cambios, actualiza el estado 'interpolatedPlayersState')
  */
 export function updatePlayerPositions() {
     if (!deps.playersState || !deps.interpolatedPlayersState) return;
@@ -188,7 +186,6 @@ export function updatePlayerPositions() {
 
 /**
  * Actualiza (interpola) las posiciones de TODOS los NPCs.
- * (Sin cambios, actualiza el estado 'npcStates')
  */
 export function updateNpcPositions() {
     if (!deps.npcStates) return;
@@ -246,36 +243,29 @@ export function updateNpcPositions() {
 
 /**
  * Comprueba si un clic/toque resultó en una interacción con un NPC.
- * ¡MODIFICADO! Ahora recibe el objeto 'npc' directamente.
+ * ¡MODIFICADO! Ahora recibe el objeto 'npc' directamente y un rango opcional.
  * @returns {boolean} - true si hubo interacción, false si no.
  */
-export function getNpcInteraction(npc) {
-    if (!deps.interpolatedPlayersState || !deps.myPlayerId || !npc) return false;
+export function getNpcInteraction(npcPos, range = MELEE_RANGE) {
+    if (!deps.interpolatedPlayersState || !deps.myPlayerId || !npcPos) return false;
     const myPlayer = deps.interpolatedPlayersState[deps.myPlayerId];
     if (!myPlayer) return false;
 
-    const distToPlayer = Math.hypot(npc.x - myPlayer.x, npc.z - myPlayer.z);
+    const distToPlayer = Math.hypot(npcPos.x - myPlayer.x, npcPos.z - myPlayer.z);
     
-    if (distToPlayer > MELEE_RANGE) {
-        console.log("NPC demasiado lejos para interactuar.");
+    if (distToPlayer > range) {
+        console.log("Objeto demasiado lejos para interactuar.");
         return false; 
     }
 
-    // ¡Interactuar!
-    // La UI se maneja en main.js
-    console.log("Interactuando con NPC:", npc);
-    // main.js llamará a showNpcModal
     return true; // Hubo interacción
 }
 
 /**
  * Comprueba si un clic/toque resultó en un portal.
- * ¡MODIFICADO! Ahora recibe la *instancia* del portal.
  * @returns {object | null} - El destino del portal, o null.
  */
 export function getPortalDestination(portalInstance) {
-    // La comprobación de 'portal' ya se hizo en el raycaster de main.js
-    // ¡CORREGIDO! Comprobar la instancia, no la variable 'tile'
     if (portalInstance && portalInstance.destMap) {
         console.log("Portal encontrado:", portalInstance);
         return {
@@ -286,8 +276,3 @@ export function getPortalDestination(portalInstance) {
     }
     return null;
 }
-
-// --- ¡ELIMINADO! ---
-// updateHoveredState() ha sido eliminado.
-// El Raycasting en main.js (onCanvasMove) se encarga de esto.
-
