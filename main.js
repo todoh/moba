@@ -1334,7 +1334,8 @@ function spawnGltfMesh(state, key, elementDef, groundY, staticX = null, staticZ 
         x: Math.floor(posX), 
         z: Math.floor(posZ),
         definition: elementDef,
-        instance: state
+        instance: state,
+        verticalOffset: 0 // --- ¡CORRECCIÓN 2! Añadido para guardar el offset ---
     };
     group.lastPos = new THREE.Vector3(posX, groundY, posZ); // Usar para rotación
 
@@ -1342,15 +1343,17 @@ function spawnGltfMesh(state, key, elementDef, groundY, staticX = null, staticZ 
     if (gltfCache.has(modelFile)) {
         const sourceScene = gltfCache.get(modelFile);
         if (sourceScene) { 
-            const modelClone = sourceScene.clone();
-            group.add(modelClone);
             
-            // --- ¡¡¡LÓGICA DE POSICIÓN CORREGIDA!!! ---
-            const box = new THREE.Box3().setFromObject(modelClone);
-            const verticalOffset = box.min.y * scale; // Cuánto hay que subir/bajar el modelo
+            // --- ¡CORRECCIÓN 1a! Calcular BBox ANTES de añadir al grupo ---
+            const modelClone = sourceScene.clone();
+            const box = new THREE.Box3().setFromObject(modelClone); // BBox en espacio local
+            group.add(modelClone); // Añadir al grupo escalado
+            
+            const verticalOffset = box.min.y * scale; // Offset escalado
             group.position.set(posX, groundY - verticalOffset, posZ); //Aplica el offset
             
             group.userData.planeHeight = (box.max.y - box.min.y) * scale;
+            group.userData.verticalOffset = verticalOffset; // --- ¡CORRECCIÓN 2! Guardar offset ---
             group.lastPos.copy(group.position); // Actualizar lastPos
 
         } else {
@@ -1373,15 +1376,16 @@ function spawnGltfMesh(state, key, elementDef, groundY, staticX = null, staticZ 
                 
                 gltfCache.set(modelFile, gltf.scene); 
                 
+                // --- ¡CORRECCIÓN 1b! Calcular BBox ANTES de añadir al grupo ---
                 const modelClone = gltf.scene.clone();
-                group.add(modelClone);
+                const box = new THREE.Box3().setFromObject(modelClone); // BBox en espacio local
+                group.add(modelClone); // Añadir al grupo escalado
                 
-                // --- ¡¡¡LÓGICA DE POSICIÓN CORREGIDA!!! ---
-                const box = new THREE.Box3().setFromObject(modelClone);
-                const verticalOffset = box.min.y * scale; // Cuánto hay que subir/bajar el modelo
+                const verticalOffset = box.min.y * scale; // Offset escalado
                 group.position.set(posX, groundY - verticalOffset, posZ); //Aplica el offset
                 
                 group.userData.planeHeight = (box.max.y - box.min.y) * scale;
+                group.userData.verticalOffset = verticalOffset; // --- ¡CORRECCIÓN 2! Guardar offset ---
                 group.lastPos.copy(group.position); // Actualizar lastPos
 
             }, undefined, (error) => {
@@ -1437,12 +1441,17 @@ function gameLoop() {
 
         // Comprobación de 'mesh' (si es un GRUPO: 'cross' o 'gltf')
         if (mesh.isGroup) { 
-            // Para GLTF, la altura Y es el suelo. Para Sprites, es la mitad.
-            targetY = groundY;
-            if (mesh.userData.type !== 'gltf-model') {
+            
+            // --- ¡CORRECCIÓN 3! Usar el offset guardado al mover ---
+            if (mesh.userData.type === 'gltf-model') {
+                const verticalOffset = mesh.userData.verticalOffset || 0;
+                targetY = groundY - verticalOffset; // Mover el GRUPO
+            } else {
+                // Lógica de sprite 2D 'cross' (existente)
                 const planeHeight = mesh.userData.planeHeight || playerSize;
                 targetY = groundY + (planeHeight / 2);
             }
+            // --- FIN CORRECCIÓN 3 ---
 
             const targetPos = new THREE.Vector3(state.x, targetY, state.z);
             mesh.position.lerp(targetPos, PLAYER_LERP_AMOUNT);
